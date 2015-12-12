@@ -1,0 +1,28 @@
+opam-version: "1.2"
+name: "usbmuxd"
+version: "0.1"
+maintainer: "Edgar Aroutiounian <edgar.factorial@gmail.com>"
+authors: [ "Edgar Aroutiounian <edgar.factorial@gmail.com>" ]
+license: "BSD-3-clause"
+homepage: "https://github.com/fxfactorial/ocaml-usbmuxd"
+bug-reports: "https://github.com/fxfactorial/ocaml-usbmuxd/issues"
+build: [
+  ["ocaml" "setup.ml" "-configure" "--prefix" prefix]
+  ["ocaml" "setup.ml" "-build"]
+]
+install: ["ocaml" "setup.ml" "-install"]
+remove: [
+  ["ocaml" "%{etc}%/usbmuxd/_oasis_remove_.ml" "%{etc}%/usbmuxd"]
+]
+build-test: [
+  ["ocaml" "setup.ml" "-configure" "--enable-tests"]
+  ["ocaml" "setup.ml" "-build"]
+  ["ocaml" "setup.ml" "-test"]
+]
+depends: [
+  "cmdliner" {build}
+  ("lwt" | "lwt-android")
+  "ocamlfind" {build}
+  "plist"
+  "stdint"
+]

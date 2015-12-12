@@ -1,0 +1,27 @@
+OASISFormat: 0.4
+Name:        usbmuxd
+Version:     0.1
+Synopsis:    ocaml program
+Authors:     Edgar Aroutiounian <edgar.factorial@gmail.com>
+Maintainers: Edgar Aroutiounian <edgar.factorial@gmail.com>
+Homepage:    https://github.com/fxfactorial/ocaml-usbmuxd
+License:     BSD-3-clause
+Plugins:     META (0.4), DevFiles (0.4)
+BuildTools: ocamlbuild
+
+Description:
+  Talk to iDevices
+
+Library usbmuxd
+  Path:         src/lib
+  Modules:      Usbmuxd
+  CompiledObject: native
+  BuildDepends: lwt.unix, lwt.ppx, stdint, plist
+
+Executable o_relay
+  Path: src/app
+  BuildTools:ocamlbuild
+  install: true
+  MainIs: main.ml
+  CompiledObject: native
+  BuildDepends: cmdliner, usbmuxd
