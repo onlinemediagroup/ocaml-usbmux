@@ -1,4 +1,4 @@
 B _build/src/lib
 B _build/src/app
 S src/lib
-PKG cmdliner lwt lwt.ppx usbmuxd stdint plist bitstring
+PKG cmdliner lwt lwt.ppx usbmuxd yojson plist

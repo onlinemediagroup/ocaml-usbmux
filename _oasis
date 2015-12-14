@@ -23,7 +23,7 @@ Library usbmuxd
   CCOpt: -ObjC -fobjc-arc
   NativeOpt: -ccopt -framework -ccopt Foundation -ccopt -ObjC
   CSources: usbmuxd_stubs.c
-  BuildDepends: lwt.unix, lwt.ppx, plist
+  BuildDepends: lwt.unix, lwt.ppx, plist, yojson
 
 Executable o_relay
   Path: src/app
