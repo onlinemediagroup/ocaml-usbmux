@@ -9,6 +9,10 @@ License:     BSD-3-clause
 Plugins:     META (0.4), DevFiles (0.4)
 BuildTools: ocamlbuild
 
+PreBuildCommand: cp src/lib/usbmuxd_stubs.m src/lib/usbmuxd_stubs.c
+
+PostBuildCommand: rm src/lib/usbmuxd_stubs.c
+
 Description:
   Talk to iDevices
 
@@ -16,6 +20,9 @@ Library usbmuxd
   Path:         src/lib
   Modules:      Usbmuxd
   CompiledObject: native
+  CCOpt: -ObjC -fobjc-arc
+  NativeOpt: -ccopt -framework -ccopt Foundation -ccopt -ObjC
+  CSources: usbmuxd_stubs.c
   BuildDepends: lwt.unix, lwt.ppx, plist
 
 Executable o_relay
