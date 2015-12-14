@@ -16,7 +16,7 @@ Library usbmuxd
   Path:         src/lib
   Modules:      Usbmuxd
   CompiledObject: native
-  BuildDepends: lwt.unix, lwt.ppx, stdint, plist
+  BuildDepends: lwt.unix, lwt.ppx, plist
 
 Executable o_relay
   Path: src/app
