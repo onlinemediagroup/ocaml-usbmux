@@ -18,7 +18,7 @@ Library usbmux
   CompiledObject: native
   BuildDepends: lwt.unix, lwt.ppx, plist, yojson
 
-Executable o_relay
+Executable gandalf
   Path: src/app
   BuildTools:ocamlbuild
   install: true
