@@ -124,6 +124,15 @@ end
 
 module Relay = struct
 
+  (** Note: PortNumber must be network-endian, so it gets byte swapped here *)
+  let connect_message device_id port =
+    (Plist.Dict [("MessageType", Plist.String "Connect");
+                 ("ClientVersionString", Plist.String "ocaml-usbmux");
+                 ("ProgName", Plist.String "ocaml-usbmux");
+                 ("DeviceID", Plist.Integer port);
+                 ("PortNumber", Plist.Integer (byte_swap_16 port))])
+    |> Plist.make
+
   let create be_verbose udid ports =
     Lwt.return ()
 
