@@ -8,6 +8,8 @@ let byte_swap_16 value =
 
 module Protocol = struct
 
+  type msg_version_t = Binary | Plist
+
   type conn_code = Success
                  | Device_requested_not_connected
                  | Port_requested_not_available
@@ -26,13 +28,24 @@ module Protocol = struct
   type msg_t = Result of conn_code
              | Event of event
 
-  let do_read_header i_chan () =
+  exception Unknown_reply of string
+
+  let header_length = 16
+
+  let do_read_header i_chan =
     i_chan |> Lwt_io.atomic begin fun ic ->
       Lwt_io.LE.read_int32 ic >>= fun raw_count ->
       Lwt_io.LE.read_int32 ic >>= fun raw_version ->
       Lwt_io.LE.read_int32 ic >>= fun raw_request ->
       Lwt_io.LE.read_int32 ic >|= fun raw_tag ->
       Int32.(to_int raw_count, to_int raw_version, to_int raw_request, to_int raw_tag)
+    end
+
+  (** Highly advised to only change value of version of default values *)
+  let do_write_header ?(version=Plist) ?(request=8) ?(tag=1) ~total_len o_chan =
+    o_chan |> Lwt_io.atomic begin fun oc ->
+      (List.map Int32.of_int [total_len; if version = Plist then 1 else 0; request; tag])
+      |> Lwt_list.iter_s (Lwt_io.LE.write_int32 oc)
     end
 
   let listen_message =
@@ -71,7 +84,7 @@ module Protocol = struct
         | 2 -> Result Device_requested_not_connected
         | 3 -> Result Port_requested_not_available
         | 5 -> Result Malformed_request
-        | _ -> assert false)
+        | n -> raise  (Unknown_reply (Printf.sprintf "Unknown result code: %d" n)))
     | "Attached" ->
       Event (Attached
                {serial_number = Util.member "SerialNumber" handle |> Util.to_string;
@@ -82,9 +95,7 @@ module Protocol = struct
                 device_id = Util.member "DeviceID" handle |> Util.to_int ;})
     | "Detached" ->
       Event (Detached (Util.member "DeviceID" handle |> Util.to_int))
-    | otherwise ->
-      print_endline otherwise;
-      assert false
+    | otherwise -> raise (Unknown_reply otherwise)
 
   let handle r () = match r with
     (* Come back to this *)
@@ -97,21 +108,16 @@ module Protocol = struct
     | _ -> return ()
 
   let create_listener debug =
-    let total_len = (String.length listen_message) + 16 in
+    let total_len = (String.length listen_message) + header_length in
     Lwt_io.open_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") >>= fun (ic, oc) ->
-
-    Lwt_io.LE.write_int32 oc (Int32.of_int total_len) >>= fun () ->
-    Lwt_io.LE.write_int32 oc (Int32.of_int 1) >>= fun () ->
-    Lwt_io.LE.write_int32 oc (Int32.of_int 8) >>= fun () ->
-    Lwt_io.LE.write_int32 oc (Int32.of_int 1) >>= fun () ->
+    do_write_header ~total_len oc >>= fun () ->
 
     Lwt_io.write_from_string oc listen_message 0 (String.length listen_message) >>= fun c ->
 
     Lwt_log.info ("Write count: " ^ string_of_int c |> colored_message) >>= fun () ->
 
-
     let rec forever () =
-      do_read_header ic () >>= fun (msg_len, version, request, tag) ->
+      do_read_header ic >>= fun (msg_len, version, request, tag) ->
       Lwt_log.info (Printf.sprintf "Read count: %d" msg_len |> colored_message) >>= fun () ->
       Lwt_io.read ~count:(msg_len) ic >>= fun raw_reply ->
       Lwt_log.info (Plist.parse_dict raw_reply
@@ -137,6 +143,7 @@ module Relay = struct
            |> make)
 
   let create be_verbose udid ports =
+
     Lwt.return ()
 
 end
