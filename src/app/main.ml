@@ -24,10 +24,13 @@ let begin_program
     picked_udid
     forward_connection =
   if be_verbose then Lwt_log.add_rule "*" Lwt_log.Info;
-  match (do_listen, picked_udid, forward_connection) with
-  | (true, _, _) -> Usbmux.Protocol.create_listener be_verbose
-  | (_, picked_udid, pairs) ->
-    Usbmux.Relay.create be_verbose picked_udid pairs
+  try%lwt
+    match (do_listen, picked_udid, forward_connection) with
+    | (true, _, _) ->
+      Usbmux.Protocol.create_listener be_verbose
+    | (_, picked_udid, pairs) ->
+      Usbmux.Relay.create be_verbose picked_udid pairs
+  with e -> Lwt_log.ign_error (Printexc.to_string e) |> Lwt.return
 
 (* ssh root@localhost -p 2222   *)
 
@@ -51,7 +54,6 @@ let top_level_info =
 
 let () =
   match Term.eval (entry_point, top_level_info) with
-  | `Ok a ->
-    Lwt_main.run a
+  | `Ok program -> Lwt_main.run program
   | `Error _ -> prerr_endline "Something errored"
   | _ -> ()
