@@ -1,28 +1,21 @@
 OASISFormat: 0.4
-Name:        usbmuxd
+Name:        usbmux
 Version:     0.1
 Synopsis:    ocaml program
 Authors:     Edgar Aroutiounian <edgar.factorial@gmail.com>
 Maintainers: Edgar Aroutiounian <edgar.factorial@gmail.com>
-Homepage:    https://github.com/fxfactorial/ocaml-usbmuxd
+Homepage:    https://github.com/fxfactorial/ocaml-usbmux
 License:     BSD-3-clause
 Plugins:     META (0.4), DevFiles (0.4)
 BuildTools: ocamlbuild
 
-PreBuildCommand: cp src/lib/usbmuxd_stubs.m src/lib/usbmuxd_stubs.c
-
-PostBuildCommand: rm src/lib/usbmuxd_stubs.c
-
 Description:
   Talk to iDevices
 
-Library usbmuxd
+Library usbmux
   Path:         src/lib
-  Modules:      Usbmuxd
+  Modules:      Usbmux
   CompiledObject: native
-  CCOpt: -ObjC -fobjc-arc
-  NativeOpt: -ccopt -framework -ccopt Foundation -ccopt -ObjC
-  CSources: usbmuxd_stubs.c
   BuildDepends: lwt.unix, lwt.ppx, plist, yojson
 
 Executable o_relay
@@ -31,4 +24,4 @@ Executable o_relay
   install: true
   MainIs: main.ml
   CompiledObject: native
-  BuildDepends: cmdliner, usbmuxd
+  BuildDepends: cmdliner, usbmux

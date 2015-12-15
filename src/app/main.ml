@@ -1,5 +1,6 @@
-open Lwt
+open Lwt.Infix
+open Cmdliner
 
 let () =
   Lwt_log.add_rule "*" Lwt_log.Info;
-  Lwt_main.run (Usbmuxd.Protocol.create_listener ())
+  Lwt_main.run (Usbmux.Protocol.create_listener ())
