@@ -1,5 +1,7 @@
 open Lwt
 module T = ANSITerminal
+module B = Yojson.Basic
+module U = Yojson.Basic.Util
 
 let byte_swap_16 value =
   ((value land 0xFF) lsl 8) lor ((value lsr 8) land 0xFF)
@@ -24,18 +26,25 @@ module Protocol = struct
   type msg_t = Result of conn_code
              | Event of event
 
+  let do_read_header i_chan () =
+    i_chan |> Lwt_io.atomic begin fun ic ->
+      Lwt_io.LE.read_int32 ic >>= fun raw_count ->
+      Lwt_io.LE.read_int32 ic >>= fun raw_version ->
+      Lwt_io.LE.read_int32 ic >>= fun raw_request ->
+      Lwt_io.LE.read_int32 ic >|= fun raw_tag ->
+      Int32.(to_int raw_count, to_int raw_version, to_int raw_request, to_int raw_tag)
+    end
+
   let listen_message =
-    (Plist.Dict [("MessageType", Plist.String "Listen");
-                 ("ClientVersionString", Plist.String "ocaml-usbmux");
-                 ("ProgName", Plist.String "ocaml-usbmux")])
-    |> Plist.make
+    Plist.(Dict [("MessageType", String "Listen");
+                 ("ClientVersionString", String "ocaml-usbmux");
+                 ("ProgName", String "ocaml-usbmux")]
+           |> make)
 
   let time_now () =
-    let localtime = Unix.localtime (Unix.time ()) in
-    Printf.sprintf "[%02u:%02u:%02u]"
-      localtime.Unix.tm_hour
-      localtime.Unix.tm_min
-      localtime.Unix.tm_sec
+    let open Unix in
+    let localtime = localtime (time ()) in
+    Printf.sprintf "[%02u:%02u:%02u]" localtime.tm_hour localtime.tm_min localtime.tm_sec
 
   let colored_message ?(t_color=T.Yellow) ?(m_color=T.Blue) ?(with_time=true) str =
     let just_time = T.sprintf [T.Foreground t_color] "%s " (time_now ()) in
@@ -53,8 +62,9 @@ module Protocol = struct
     (* Lazy, add rest here *)
     | _ -> return ()
 
-  let parse_reply handle =
+  let parse_reply raw_reply =
     let open Yojson.Basic in
+    let handle = Plist.parse_dict raw_reply in
     match (Util.member "MessageType" handle) |> Util.to_string with
     | "Result" -> (match (Util.member "Number" handle) |> Util.to_int with
         | 0 -> Result Success
@@ -99,22 +109,15 @@ module Protocol = struct
 
     Lwt_log.info ("Write count: " ^ string_of_int c |> colored_message) >>= fun () ->
 
+
     let rec forever () =
-      (* TODO abstract into a function call *)
-      Lwt_io.LE.read_int32 ic >>= fun c ->
-      Lwt_io.LE.read_int32 ic >>= fun _ ->
-      Lwt_io.LE.read_int32 ic >>= fun _ ->
-      Lwt_io.LE.read_int32 ic >>= fun _ ->
-
-      let msg_len = Int32.to_int c in
-
-      Lwt_log.info (Printf.sprintf "Reply count: %d" msg_len |> colored_message) >>= fun () ->
-
+      do_read_header ic () >>= fun (msg_len, version, request, tag) ->
+      Lwt_log.info (Printf.sprintf "Read count: %d" msg_len |> colored_message) >>= fun () ->
       Lwt_io.read ~count:(msg_len) ic >>= fun raw_reply ->
-
-      (* Plist.parse_dict raw_reply |> Yojson.Basic.pretty_to_string |> print_endline; *)
-      let reply = Plist.parse_dict raw_reply |> parse_reply in
-
+      Lwt_log.info (Plist.parse_dict raw_reply
+                    |> B.pretty_to_string
+                    |> colored_message ~m_color:T.Green) >>= fun () ->
+      let reply = raw_reply |> parse_reply in
       if debug then log_reply reply >>= handle reply >>= forever
       else handle reply () >>= forever
     in
@@ -126,12 +129,12 @@ module Relay = struct
 
   (** Note: PortNumber must be network-endian, so it gets byte swapped here *)
   let connect_message device_id port =
-    (Plist.Dict [("MessageType", Plist.String "Connect");
-                 ("ClientVersionString", Plist.String "ocaml-usbmux");
-                 ("ProgName", Plist.String "ocaml-usbmux");
-                 ("DeviceID", Plist.Integer port);
-                 ("PortNumber", Plist.Integer (byte_swap_16 port))])
-    |> Plist.make
+    Plist.((Dict [("MessageType", String "Connect");
+                  ("ClientVersionString", String "ocaml-usbmux");
+                  ("ProgName", String "ocaml-usbmux");
+                  ("DeviceID", Integer port);
+                  ("PortNumber", Integer (byte_swap_16 port))])
+           |> make)
 
   let create be_verbose udid ports =
     Lwt.return ()
