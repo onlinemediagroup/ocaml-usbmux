@@ -16,7 +16,7 @@ let picked_udid =
 let forward_connection =
   let open Arg in
   let doc = "What ports to do forwarding on, example 22:5000" in
-  value & opt (some (pair ~sep:':' int int)) None & info ["p";"port"] ~doc
+  value & pos_all (pair ~sep:':' int int) [] (info [] ~doc)
 
 let begin_program
     do_listen
@@ -26,8 +26,8 @@ let begin_program
   if be_verbose then Lwt_log.add_rule "*" Lwt_log.Info;
   match (do_listen, picked_udid, forward_connection) with
   | (true, _, _) -> Usbmux.Protocol.create_listener be_verbose
-  | (_, picked_udid, forward_pair) ->
-    Usbmux.do_start_relay picked_udid forward_pair
+  | (_, picked_udid, pairs) ->
+    Usbmux.Relay.create be_verbose picked_udid pairs
 
 (* ssh root@localhost -p 2222   *)
 
