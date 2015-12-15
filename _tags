@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 4cc448702d912150f24cbe861f592495)
+# DO NOT EDIT (digest: cf27abd5123e6d6a2e28a07ac02d2879)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -16,17 +16,20 @@ true: annot, bin_annot
 "_darcs": not_hygienic
 # Library usbmux
 "src/lib/usbmux.cmxs": use_usbmux
+<src/lib/*.ml{,i,y}>: pkg_ANSITerminal
 <src/lib/*.ml{,i,y}>: pkg_lwt.ppx
 <src/lib/*.ml{,i,y}>: pkg_lwt.unix
 <src/lib/*.ml{,i,y}>: pkg_plist
 <src/lib/*.ml{,i,y}>: pkg_yojson
-# Executable o_relay
+# Executable gandalf
+"src/app/main.native": pkg_ANSITerminal
 "src/app/main.native": pkg_cmdliner
 "src/app/main.native": pkg_lwt.ppx
 "src/app/main.native": pkg_lwt.unix
 "src/app/main.native": pkg_plist
 "src/app/main.native": pkg_yojson
 "src/app/main.native": use_usbmux
+<src/app/*.ml{,i,y}>: pkg_ANSITerminal
 <src/app/*.ml{,i,y}>: pkg_cmdliner
 <src/app/*.ml{,i,y}>: pkg_lwt.ppx
 <src/app/*.ml{,i,y}>: pkg_lwt.unix

@@ -1,8 +1,8 @@
 # OASIS_START
-# DO NOT EDIT (digest: 8d1cf2124f50f1b82ab5faa5f51e04c1)
+# DO NOT EDIT (digest: 92301792da308777a330f95da4232dc5)
 version = "0.1"
 description = "ocaml program"
-requires = "lwt.unix lwt.ppx plist yojson"
+requires = "lwt.unix lwt.ppx plist yojson ANSITerminal"
 archive(byte) = "usbmux.cma"
 archive(byte, plugin) = "usbmux.cma"
 archive(native) = "usbmux.cmxa"

@@ -1,4 +1,5 @@
 open Lwt
+module T = ANSITerminal
 
 let byte_swap_16 value =
   ((value land 0xFF) lsl 8) lor ((value lsr 8) land 0xFF)
@@ -29,12 +30,27 @@ module Protocol = struct
                  ("ProgName", Plist.String "ocaml-usbmux")])
     |> Plist.make
 
+  let time_now () =
+    let localtime = Unix.localtime (Unix.time ()) in
+    Printf.sprintf "[%02u:%02u:%02u]"
+      localtime.Unix.tm_hour
+      localtime.Unix.tm_min
+      localtime.Unix.tm_sec
+
+  let colored_message ?(t_color=T.Yellow) ?(m_color=T.Blue) ?(with_time=true) str =
+    let just_time = T.sprintf [T.Foreground t_color] "%s " (time_now ()) in
+    let just_message = T.sprintf [T.Foreground m_color] "%s" str in
+    if with_time then just_time ^ just_message else just_message
+
   let log_reply = function
-    | Result Success -> Lwt_log.info "Listening for iDevices"
+    | Result Success -> Lwt_log.info (colored_message "Listening for iDevices")
     | Result Device_requested_not_connected ->
-      Lwt_log.info "Device requested was not connected"
+      Lwt_log.info (colored_message ~m_color:T.Red "Device requested was not connected")
     | Result Port_requested_not_available ->
-      Lwt_log.info "Port requested was not available"
+      Lwt_log.info (colored_message ~m_color:T.Red "Port requested was not available")
+    | Result Malformed_request ->
+      Lwt_io.printl (colored_message ~m_color:T.Red "Malformed request, check the request")
+    (* Lazy, add rest here *)
     | _ -> return ()
 
   let parse_reply handle =
@@ -47,22 +63,22 @@ module Protocol = struct
         | 5 -> Result Malformed_request
         | _ -> assert false)
     | "Attached" ->
-      Event (Attached {serial_number = Util.member "SerialNumber" handle |> Util.to_string;
-                       connection_speed = Util.member "ConnectionSpeed" handle |> Util.to_int;
-                       connection_type = Util.member "ConnectionType" handle |> Util.to_string;
-                       product_id = Util.member "ProductID" handle |> Util.to_int;
-                       location_id = Util.member "LocationID" handle |> Util.to_int;
-                       device_id = Util.member "DeviceID" handle |> Util.to_int ;})
+      Event (Attached
+               {serial_number = Util.member "SerialNumber" handle |> Util.to_string;
+                connection_speed = Util.member "ConnectionSpeed" handle |> Util.to_int;
+                connection_type = Util.member "ConnectionType" handle |> Util.to_string;
+                product_id = Util.member "ProductID" handle |> Util.to_int;
+                location_id = Util.member "LocationID" handle |> Util.to_int;
+                device_id = Util.member "DeviceID" handle |> Util.to_int ;})
     | "Detached" ->
       Event (Detached (Util.member "DeviceID" handle |> Util.to_int))
     | otherwise ->
       print_endline otherwise;
       assert false
 
-  let handle = function
-    | Result Success -> Lwt_io.printl "got a success"
-    | Result Device_requested_not_connected -> Lwt_io.printl "Device asked for isn't even connected"
-    | Result Malformed_request -> Lwt_io.printl "Malformed request, check the request"
+  let handle r () = match r with
+    (* Come back to this *)
+    | Result (Success | Device_requested_not_connected) -> Lwt.return ()
     | Event Attached { serial_number; connection_speed; connection_type;
                        product_id; location_id; device_id; } ->
       Lwt_io.printlf "Device %d with serial number: %s connected" device_id serial_number
@@ -70,7 +86,7 @@ module Protocol = struct
       Lwt_io.printlf "Device %d disconnected" d
     | _ -> return ()
 
-  let create_listener () =
+  let create_listener debug =
     let total_len = (String.length listen_message) + 16 in
     Lwt_io.open_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") >>= fun (ic, oc) ->
 
@@ -80,7 +96,8 @@ module Protocol = struct
     Lwt_io.LE.write_int32 oc (Int32.of_int 1) >>= fun () ->
 
     Lwt_io.write_from_string oc listen_message 0 (String.length listen_message) >>= fun c ->
-    Lwt_log.info ("Wrote " ^ string_of_int c) >>= fun () ->
+
+    Lwt_log.info ("Write count: " ^ string_of_int c |> colored_message) >>= fun () ->
 
     let rec forever () =
       (* TODO abstract into a function call *)
@@ -91,15 +108,20 @@ module Protocol = struct
 
       let msg_len = Int32.to_int c in
 
-      Lwt_log.info (Printf.sprintf "Reply length %d\n" msg_len) >>= fun () ->
+      Lwt_log.info (Printf.sprintf "Reply count: %d" msg_len |> colored_message) >>= fun () ->
 
       Lwt_io.read ~count:(msg_len) ic >>= fun raw_reply ->
 
       (* Plist.parse_dict raw_reply |> Yojson.Basic.pretty_to_string |> print_endline; *)
-
       let reply = Plist.parse_dict raw_reply |> parse_reply in
-      handle reply >>= forever
+
+      if debug then log_reply reply >>= handle reply >>= forever
+      else handle reply () >>= forever
     in
     forever ()
 
 end
+
+let do_start_relay udid forward_pair =
+  (* print_endline forward_pair; *)
+  Lwt.return ()
