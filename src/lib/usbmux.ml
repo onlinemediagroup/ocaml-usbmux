@@ -125,7 +125,9 @@ module Protocol = struct
 
       Lwt_log.info
         (colored_message ~m_color:T.Green
-           (Printf.sprintf "Len: %d, Version: %d, Request: %d, Tag: %d" msg_len version request tag)) >>= fun () ->
+           (Printf.sprintf
+              "Len: %d, Version: %d, Request: %d, Tag: %d"
+              msg_len version request tag)) >>= fun () ->
 
       let buffer = Bytes.create (msg_len - header_length) in
 
@@ -136,7 +138,9 @@ module Protocol = struct
         do_read_header ic >>= fun (msg_len, version, request, tag) ->
         Lwt_log.info
           (colored_message ~m_color:T.Green
-             (Printf.sprintf "Len: %d, Version: %d, Request: %d, Tag: %d" msg_len version request tag)) >>= fun () ->
+             (Printf.sprintf
+                "Len: %d, Version: %d, Request: %d, Tag: %d"
+                msg_len version request tag)) >>= fun () ->
         let buffer = Bytes.create (msg_len - header_length) in
         Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
         if debug then print_endline (Plist.parse_dict buffer |> B.pretty_to_string);
@@ -156,19 +160,28 @@ module Relay = struct
     Plist.((Dict [("MessageType", String "Connect");
                   ("ClientVersionString", String "ocaml-usbmux");
                   ("ProgName", String "ocaml-usbmux");
-                  ("DeviceID", Integer port);
+                  ("DeviceID", Integer device_id);
                   ("PortNumber", Integer (byte_swap_16 port))])
            |> make)
 
-  let create be_verbose udid ports =
-    (* Simplified for now *)
-    (* let [(from, to_)] = ports in *)
+  let handle_connection (client_sock, client_info) =
+    let (ic, oc) =
+      Lwt_io.of_fd ~mode:Lwt_io.Input client_sock, Lwt_io.of_fd ~mode:Lwt_io.Output client_sock
+    in
+    let rec read_all () =
+      (* Here need to pass off to the local socket *)
+      Lwt_io.read_line ic >>= Lwt_io.printl >>= read_all
+    in
+    read_all ()
 
-    (* Lwt_io.with_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") begin fun (ic, oc) -> *)
-    (*   Protocol.do_write_header ~total_len:(String.length (connect_message udid from)) oc >|= fun () -> *)
-    (*   Lwt_io.establish_server (Unix.(ADDR_INET(inet_addr_loopback, to_))) begin fun (server_ic, server_oc) -> *)
-    (*     print_endline "Created server" *)
-    (*   end *)
-    (* end *)
-    Lwt.return ()
+  let create verbose udid port_pairs =
+    let open Lwt_unix in
+    let sock = socket PF_INET SOCK_STREAM 0 in
+    bind sock (ADDR_INET(Unix.inet_addr_loopback, 2000));
+    listen sock 20;
+    let rec keep_listening on_socket () =
+      accept on_socket >>= handle_connection >>= keep_listening on_socket
+    in
+    keep_listening sock ()
+
 end
