@@ -30,7 +30,7 @@ let begin_program
       | (true, _, _) ->
         Usbmux.Protocol.create_listener be_verbose
       | (_, picked_udid, pairs) ->
-        Usbmux.Relay.create be_verbose picked_udid pairs
+        Usbmux.Relay.begin_relay be_verbose picked_udid pairs
     with
     | Unix.Unix_error (Unix.ECONNREFUSED, _, _) ->
       (* Maybe add logic to do the spawning, will need 2 more command

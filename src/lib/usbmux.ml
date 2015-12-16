@@ -205,7 +205,7 @@ module Relay = struct
     in
     log_client client_info Connected >>= read_all
 
-  let create verbose udid port_pairs =
+  let create_tcp_server verbose udid port_pairs =
     let open Lwt_unix in
     let sock = socket PF_INET SOCK_STREAM 0 in
     setsockopt sock SO_REUSEADDR true;
@@ -216,5 +216,14 @@ module Relay = struct
       accept on_socket >>= handle_connection >>= keep_listening on_socket
     in
     Lwt_log.info (colored_message "Started TCP routing server") >>= keep_listening sock
+
+  let create_listener () =
+    Lwt_io.printl "Started Listener Code"
+
+  let begin_relay verbose udid port_pairs =
+    (* This is a parallel binding, both will go off *)
+    let%lwt _ = create_tcp_server verbose udid port_pairs
+    and _ = create_listener () in
+    Lwt.return_unit
 
 end
