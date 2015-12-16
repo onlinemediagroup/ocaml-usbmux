@@ -22,6 +22,7 @@ let begin_program
     be_verbose
     picked_udid
     forward_connection =
+  (* Black magic for the entire running process *)
   if be_verbose then Lwt_log.add_rule "*" Lwt_log.Info;
 
   let rec do_start retry_count =
@@ -30,7 +31,7 @@ let begin_program
       | (true, _, _) ->
         Usbmux.Protocol.create_listener be_verbose
       | (_, picked_udid, pairs) ->
-        Usbmux.Relay.begin_relay be_verbose picked_udid pairs
+        Usbmux.Relay.begin_relay picked_udid pairs
     with
     | Unix.Unix_error (Unix.ECONNREFUSED, _, _) ->
       (* Maybe add logic to do the spawning, will need 2 more command

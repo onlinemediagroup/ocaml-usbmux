@@ -42,7 +42,7 @@ module Protocol = struct
 
   let header_length = 16
 
-  let do_read_header i_chan =
+  let read_header i_chan =
     i_chan |> Lwt_io.atomic begin fun ic ->
       Lwt_io.LE.read_int32 ic >>= fun raw_count ->
       Lwt_io.LE.read_int32 ic >>= fun raw_version ->
@@ -52,7 +52,7 @@ module Protocol = struct
     end
 
   (** Highly advised to only change value of version of default values *)
-  let do_write_header ?(version=Plist) ?(request=8) ?(tag=1) ~total_len o_chan =
+  let write_header ?(version=Plist) ?(request=8) ?(tag=1) ~total_len o_chan =
     o_chan |> Lwt_io.atomic begin fun oc ->
       (List.map Int32.of_int [total_len; if version = Plist then 1 else 0; request; tag])
       |> Lwt_list.iter_s (Lwt_io.LE.write_int32 oc)
@@ -102,8 +102,8 @@ module Protocol = struct
   let handle r () = match r with
     (* Come back to this *)
     | Result (Success | Device_requested_not_connected) -> return ()
-    | Event Attached { serial_number; connection_speed; connection_type;
-                       product_id; location_id; device_id; } ->
+    | Event Attached { serial_number; connection_speed = _; connection_type = _;
+                       product_id = _; location_id = _; device_id; } ->
       Lwt_io.printlf "Device %d with serial number: %s connected" device_id serial_number
     | Event Detached d ->
       Lwt_io.printlf "Device %d disconnected" d
@@ -113,7 +113,7 @@ module Protocol = struct
     let total_len = (String.length listen_message) + header_length in
     Lwt_io.with_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") begin fun (ic, oc) ->
       (* Send the header for our listen message *)
-      do_write_header ~total_len oc >>= fun () ->
+      write_header ~total_len oc >>= fun () ->
       (* Send the listen message body, aka the Plist *)
       Lwt_io.write_from_string oc listen_message 0 (String.length listen_message) >>= fun c ->
       Lwt_log.info
@@ -121,7 +121,7 @@ module Protocol = struct
          |> colored_message) >>= fun () ->
 
       (* Read back the other side's header message *)
-      do_read_header ic >>= fun (msg_len, version, request, tag) ->
+      read_header ic >>= fun (msg_len, version, request, tag) ->
 
       Lwt_log.info
         (colored_message ~m_color:T.Green
@@ -135,7 +135,7 @@ module Protocol = struct
 
       (* We know how long the message length ought to be, so let's just read that much *)
       let rec forever () =
-        do_read_header ic >>= fun (msg_len, version, request, tag) ->
+        read_header ic >>= fun (msg_len, version, request, tag) ->
         Lwt_log.info
           (colored_message ~m_color:T.Green
              (Printf.sprintf
@@ -189,7 +189,7 @@ module Relay = struct
            |> make)
 
   let handle_connection (client_sock, client_info) =
-    let (ic, oc) =
+    let (ic, _) =
       Lwt_io.of_fd ~mode:Lwt_io.Input client_sock,
       Lwt_io.of_fd ~mode:Lwt_io.Output client_sock
     in
@@ -205,7 +205,7 @@ module Relay = struct
     in
     log_client client_info Connected >>= read_all
 
-  let create_tcp_server verbose udid port_pairs =
+  let create_tcp_server udid port_pairs =
     let open Lwt_unix in
     let sock = socket PF_INET SOCK_STREAM 0 in
     setsockopt sock SO_REUSEADDR true;
@@ -220,9 +220,9 @@ module Relay = struct
   let create_listener () =
     Lwt_io.printl "Started Listener Code"
 
-  let begin_relay verbose udid port_pairs =
+  let begin_relay udid port_pairs =
     (* This is a parallel binding, both will go off *)
-    let%lwt _ = create_tcp_server verbose udid port_pairs
+    let%lwt _ = create_tcp_server udid port_pairs
     and _ = create_listener () in
     Lwt.return_unit
 
