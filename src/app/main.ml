@@ -30,7 +30,8 @@ let begin_program
       Usbmux.Protocol.create_listener be_verbose
     | (_, picked_udid, pairs) ->
       Usbmux.Relay.create be_verbose picked_udid pairs
-  with e -> Lwt_log.ign_error (Printexc.to_string e) |> Lwt.return
+  with e ->
+    Lwt_log.ign_error (Printexc.to_string e) |> Lwt.return
 
 (* ssh root@localhost -p 2222   *)
 

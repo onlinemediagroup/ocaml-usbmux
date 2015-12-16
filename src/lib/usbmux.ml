@@ -80,11 +80,11 @@ module Protocol = struct
     let handle = Plist.parse_dict raw_reply in
     match (Util.member "MessageType" handle) |> Util.to_string with
     | "Result" -> (match (Util.member "Number" handle) |> Util.to_int with
-        | 0 -> Result Success
-        | 2 -> Result Device_requested_not_connected
-        | 3 -> Result Port_requested_not_available
-        | 5 -> Result Malformed_request
-        | n -> raise  (Unknown_reply (Printf.sprintf "Unknown result code: %d" n)))
+        | 0 -> Result Success |> return
+        | 2 -> Result Device_requested_not_connected |> return
+        | 3 -> Result Port_requested_not_available |> return
+        | 5 -> Result Malformed_request |> return
+        | n -> Lwt.fail (Unknown_reply (Printf.sprintf "Unknown result code: %d" n)))
     | "Attached" ->
       Event (Attached
                {serial_number = Util.member "SerialNumber" handle |> Util.to_string;
@@ -93,13 +93,15 @@ module Protocol = struct
                 product_id = Util.member "ProductID" handle |> Util.to_int;
                 location_id = Util.member "LocationID" handle |> Util.to_int;
                 device_id = Util.member "DeviceID" handle |> Util.to_int ;})
+      |> return
     | "Detached" ->
       Event (Detached (Util.member "DeviceID" handle |> Util.to_int))
-    | otherwise -> raise (Unknown_reply otherwise)
+      |> return
+    | otherwise -> Lwt.fail (Unknown_reply otherwise)
 
   let handle r () = match r with
     (* Come back to this *)
-    | Result (Success | Device_requested_not_connected) -> Lwt.return ()
+    | Result (Success | Device_requested_not_connected) -> return ()
     | Event Attached { serial_number; connection_speed; connection_type;
                        product_id; location_id; device_id; } ->
       Lwt_io.printlf "Device %d with serial number: %s connected" device_id serial_number
@@ -110,20 +112,40 @@ module Protocol = struct
   let create_listener debug =
     let total_len = (String.length listen_message) + header_length in
     Lwt_io.open_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") >>= fun (ic, oc) ->
+    (* Send the header for our listen message *)
     do_write_header ~total_len oc >>= fun () ->
-
+    (* Send the listen message body, aka the Plist *)
     Lwt_io.write_from_string oc listen_message 0 (String.length listen_message) >>= fun c ->
+    Lwt_log.info
+      (Printf.sprintf "Needed to write: %d, actually wrote: %d" (total_len - header_length) c
+       |> colored_message) >>= fun () ->
 
-    Lwt_log.info ("Write count: " ^ string_of_int c |> colored_message) >>= fun () ->
+    (* Read back the other side's header message *)
+    do_read_header ic >>= fun (msg_len, version, request, tag) ->
 
+    Lwt_log.info
+      (colored_message ~m_color:T.Green
+         (Printf.sprintf "Len: %d, Version: %d, Request: %d, Tag: %d" msg_len version request tag)) >>= fun () ->
+
+    let buffer = Bytes.create (msg_len - header_length) in
+
+    Lwt_io.read_into_exactly ic buffer 0 (msg_len - 16) >>= fun () ->
+
+    (* We know how long the message length ought to be, so let's just read that much *)
     let rec forever () =
       do_read_header ic >>= fun (msg_len, version, request, tag) ->
-      Lwt_log.info (Printf.sprintf "Read count: %d" msg_len |> colored_message) >>= fun () ->
-      Lwt_io.read ~count:(msg_len) ic >>= fun raw_reply ->
-      Lwt_log.info (Plist.parse_dict raw_reply
-                    |> B.pretty_to_string
-                    |> colored_message ~m_color:T.Green) >>= fun () ->
-      let reply = raw_reply |> parse_reply in
+
+      Lwt_log.info
+        (colored_message ~m_color:T.Green
+           (Printf.sprintf "Len: %d, Version: %d, Request: %d, Tag: %d" msg_len version request tag)) >>= fun () ->
+
+      let buffer = Bytes.create (msg_len - header_length) in
+
+      Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
+
+      if debug then print_endline (Plist.parse_dict buffer |> B.pretty_to_string);
+
+      buffer |> parse_reply >>= fun reply ->
       if debug then log_reply reply >>= handle reply >>= forever
       else handle reply () >>= forever
     in
@@ -144,7 +166,7 @@ module Relay = struct
 
   let create be_verbose udid ports =
 
-    Lwt.return ()
+    return ()
 
 end
 
