@@ -166,11 +166,18 @@ module Relay = struct
 
   let handle_connection (client_sock, client_info) =
     let (ic, oc) =
-      Lwt_io.of_fd ~mode:Lwt_io.Input client_sock, Lwt_io.of_fd ~mode:Lwt_io.Output client_sock
+      Lwt_io.of_fd ~mode:Lwt_io.Input client_sock,
+      Lwt_io.of_fd ~mode:Lwt_io.Output client_sock
     in
+
     let rec read_all () =
       (* Here need to pass off to the local socket *)
-      Lwt_io.read_line ic >>= Lwt_io.printl >>= read_all
+      try%lwt
+        Lwt_io.read_line ic >>= Lwt_io.printl >>= read_all
+      (* When other side disconnected but we don't want to kill the
+         server, just loops again. See keep_listening *)
+      with End_of_file ->
+        Lwt_io.printl "ended"
     in
     read_all ()
 
