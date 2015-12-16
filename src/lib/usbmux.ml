@@ -155,6 +155,23 @@ end
 
 module Relay = struct
 
+  type conn_t = Connected | Disconnected
+
+  let string_of_c_event = function
+    | Connected -> "connected"
+    | Disconnected -> "disconnected"
+
+  let log_client c_sockaddr c_event =
+    let open Unix in
+    let c = string_of_c_event c_event in
+    (match c_sockaddr with
+     | ADDR_UNIX s ->
+       Printf.sprintf "Client %s %s" s c
+     | ADDR_INET (i, p) ->
+       Printf.sprintf "Client %s on port %d %s" (string_of_inet_addr i) p c)
+    |> colored_message
+    |> Lwt_log.info
+
   let handle_signals sock =
     ignore begin Sys.(signal sigint (Signal_handle begin fun _ ->
         Lwt_unix.unix_file_descr sock |> Unix.close;
@@ -176,21 +193,22 @@ module Relay = struct
       Lwt_io.of_fd ~mode:Lwt_io.Input client_sock,
       Lwt_io.of_fd ~mode:Lwt_io.Output client_sock
     in
-    print_endline "Someone connected";
+
     let rec read_all () =
       (* Here need to pass off to the local socket *)
       try%lwt
         Lwt_io.read_line ic >>= Lwt_io.printl >>= read_all
       (* When other side disconnected but we don't want to kill the
          server, just loops again. See keep_listening *)
-      with End_of_file ->
-        Lwt_io.printl "ended"
+      with End_of_file -> log_client client_info Disconnected
+
     in
-    read_all ()
+    log_client client_info Connected >>= read_all
 
   let create verbose udid port_pairs =
     let open Lwt_unix in
     let sock = socket PF_INET SOCK_STREAM 0 in
+    setsockopt sock SO_REUSEADDR true;
     handle_signals sock;
     bind sock (ADDR_INET(Unix.inet_addr_loopback, 2000));
     listen sock 20;
