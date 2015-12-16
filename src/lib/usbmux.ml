@@ -6,6 +6,16 @@ module U = Yojson.Basic.Util
 let byte_swap_16 value =
   ((value land 0xFF) lsl 8) lor ((value lsr 8) land 0xFF)
 
+let time_now () =
+  let open Unix in
+  let localtime = localtime (time ()) in
+  Printf.sprintf "[%02u:%02u:%02u]" localtime.tm_hour localtime.tm_min localtime.tm_sec
+
+let colored_message ?(t_color=T.Yellow) ?(m_color=T.Blue) ?(with_time=true) str =
+  let just_time = T.sprintf [T.Foreground t_color] "%s " (time_now ()) in
+  let just_message = T.sprintf [T.Foreground m_color] "%s" str in
+  if with_time then just_time ^ just_message else just_message
+
 module Protocol = struct
 
   type msg_version_t = Binary | Plist
@@ -53,16 +63,6 @@ module Protocol = struct
                  ("ClientVersionString", String "ocaml-usbmux");
                  ("ProgName", String "ocaml-usbmux")]
            |> make)
-
-  let time_now () =
-    let open Unix in
-    let localtime = localtime (time ()) in
-    Printf.sprintf "[%02u:%02u:%02u]" localtime.tm_hour localtime.tm_min localtime.tm_sec
-
-  let colored_message ?(t_color=T.Yellow) ?(m_color=T.Blue) ?(with_time=true) str =
-    let just_time = T.sprintf [T.Foreground t_color] "%s " (time_now ()) in
-    let just_message = T.sprintf [T.Foreground m_color] "%s" str in
-    if with_time then just_time ^ just_message else just_message
 
   let log_reply = function
     | Result Success -> Lwt_log.info (colored_message "Listening for iDevices")
