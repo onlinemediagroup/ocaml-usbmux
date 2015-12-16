@@ -111,28 +111,16 @@ module Protocol = struct
 
   let create_listener debug =
     let total_len = (String.length listen_message) + header_length in
-    Lwt_io.open_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") >>= fun (ic, oc) ->
-    (* Send the header for our listen message *)
-    do_write_header ~total_len oc >>= fun () ->
-    (* Send the listen message body, aka the Plist *)
-    Lwt_io.write_from_string oc listen_message 0 (String.length listen_message) >>= fun c ->
-    Lwt_log.info
-      (Printf.sprintf "Needed to write: %d, actually wrote: %d" (total_len - header_length) c
-       |> colored_message) >>= fun () ->
+    Lwt_io.with_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") begin fun (ic, oc) ->
+      (* Send the header for our listen message *)
+      do_write_header ~total_len oc >>= fun () ->
+      (* Send the listen message body, aka the Plist *)
+      Lwt_io.write_from_string oc listen_message 0 (String.length listen_message) >>= fun c ->
+      Lwt_log.info
+        (Printf.sprintf "Needed to write: %d, actually wrote: %d" (total_len - header_length) c
+         |> colored_message) >>= fun () ->
 
-    (* Read back the other side's header message *)
-    do_read_header ic >>= fun (msg_len, version, request, tag) ->
-
-    Lwt_log.info
-      (colored_message ~m_color:T.Green
-         (Printf.sprintf "Len: %d, Version: %d, Request: %d, Tag: %d" msg_len version request tag)) >>= fun () ->
-
-    let buffer = Bytes.create (msg_len - header_length) in
-
-    Lwt_io.read_into_exactly ic buffer 0 (msg_len - 16) >>= fun () ->
-
-    (* We know how long the message length ought to be, so let's just read that much *)
-    let rec forever () =
+      (* Read back the other side's header message *)
       do_read_header ic >>= fun (msg_len, version, request, tag) ->
 
       Lwt_log.info
@@ -141,21 +129,29 @@ module Protocol = struct
 
       let buffer = Bytes.create (msg_len - header_length) in
 
-      Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
+      Lwt_io.read_into_exactly ic buffer 0 (msg_len - 16) >>= fun () ->
 
-      if debug then print_endline (Plist.parse_dict buffer |> B.pretty_to_string);
-
-      buffer |> parse_reply >>= fun reply ->
-      if debug then log_reply reply >>= handle reply >>= forever
-      else handle reply () >>= forever
-    in
-    forever ()
+      (* We know how long the message length ought to be, so let's just read that much *)
+      let rec forever () =
+        do_read_header ic >>= fun (msg_len, version, request, tag) ->
+        Lwt_log.info
+          (colored_message ~m_color:T.Green
+             (Printf.sprintf "Len: %d, Version: %d, Request: %d, Tag: %d" msg_len version request tag)) >>= fun () ->
+        let buffer = Bytes.create (msg_len - header_length) in
+        Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
+        if debug then print_endline (Plist.parse_dict buffer |> B.pretty_to_string);
+        buffer |> parse_reply >>= fun reply ->
+        if debug then log_reply reply >>= handle reply >>= forever
+        else handle reply () >>= forever
+      in
+      forever ()
+    end
 
 end
 
 module Relay = struct
 
-  (** Note: PortNumber must be network-endian, so it gets byte swapped here *)
+  (* Note: PortNumber must be network-endian, so it gets byte swapped here *)
   let connect_message device_id port =
     Plist.((Dict [("MessageType", String "Connect");
                   ("ClientVersionString", String "ocaml-usbmux");
@@ -165,8 +161,14 @@ module Relay = struct
            |> make)
 
   let create be_verbose udid ports =
+    (* Simplified for now *)
+    (* let [(from, to_)] = ports in *)
 
-    return ()
-
+    (* Lwt_io.with_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") begin fun (ic, oc) -> *)
+    (*   Protocol.do_write_header ~total_len:(String.length (connect_message udid from)) oc >|= fun () -> *)
+    (*   Lwt_io.establish_server (Unix.(ADDR_INET(inet_addr_loopback, to_))) begin fun (server_ic, server_oc) -> *)
+    (*     print_endline "Created server" *)
+    (*   end *)
+    (* end *)
+    Lwt.return ()
 end
-
