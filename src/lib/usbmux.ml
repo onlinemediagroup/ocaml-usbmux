@@ -155,6 +155,13 @@ end
 
 module Relay = struct
 
+  let handle_signals sock =
+    ignore begin Sys.(signal sigint (Signal_handle begin fun _ ->
+        Lwt_unix.unix_file_descr sock |> Unix.close;
+        exit 0
+      end))
+    end
+
   (* Note: PortNumber must be network-endian, so it gets byte swapped here *)
   let connect_message device_id port =
     Plist.((Dict [("MessageType", String "Connect");
@@ -169,7 +176,7 @@ module Relay = struct
       Lwt_io.of_fd ~mode:Lwt_io.Input client_sock,
       Lwt_io.of_fd ~mode:Lwt_io.Output client_sock
     in
-
+    print_endline "Someone connected";
     let rec read_all () =
       (* Here need to pass off to the local socket *)
       try%lwt
@@ -184,11 +191,12 @@ module Relay = struct
   let create verbose udid port_pairs =
     let open Lwt_unix in
     let sock = socket PF_INET SOCK_STREAM 0 in
+    handle_signals sock;
     bind sock (ADDR_INET(Unix.inet_addr_loopback, 2000));
     listen sock 20;
     let rec keep_listening on_socket () =
       accept on_socket >>= handle_connection >>= keep_listening on_socket
     in
-    keep_listening sock ()
+    Lwt_log.info (colored_message "Started TCP routing server") >>= keep_listening sock
 
 end
