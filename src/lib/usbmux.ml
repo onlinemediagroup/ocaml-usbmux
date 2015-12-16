@@ -224,7 +224,7 @@ module Relay = struct
     in
     Lwt_log.info (colored_message "Started TCP routing server") >>= keep_listening sock
 
-  let create_listener debug port =
+  let start_listener_and_forward debug port =
     (* 1) Tell usbmux that we are interested in listening
        2) Tell usbmux to connect for certain device ID/udid/port
        3) Take all messages coming for server and write them to the oc of the socket connected to usbmux
@@ -234,15 +234,18 @@ module Relay = struct
       (* Here do the connect to a device for a tunneled tcp connection logic *)
 
       Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
+        (* Hardcoded device number *)
         let msg = connect_message 4 port in
         let total_len = (String.length msg) + Protocol.header_length in
         Protocol.write_header ~total_len mux_oc >>= fun () ->
+        (* print_endline msg; *)
         Lwt_io.write_from_string mux_oc msg 0 (String.length msg) >>= fun c ->
         Protocol.read_header mux_ic >>= fun (msg_len, version, request, tag) ->
         let buffer = Bytes.create (msg_len - Protocol.header_length) in
 
         Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - 16) >>= fun () ->
 
+        print_endline buffer;
         Plist.parse_dict buffer |> B.pretty_to_string |> Lwt_io.printl
 
       end
@@ -253,7 +256,8 @@ module Relay = struct
     (* This is a parallel binding, both will go off *)
     (* Need to switch order? *)
     let%lwt _ = create_tcp_server udid port_pairs
-    and _ = create_listener debug 2000 in
+    (* Hardcoded port number of 22, needs to later be Lwt_list.iter_p *)
+    and _ = start_listener_and_forward debug 22 in
     Lwt.return_unit
 
 end
