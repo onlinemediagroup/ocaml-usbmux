@@ -40,7 +40,17 @@ module Protocol = struct
 
   exception Unknown_reply of string
 
-  let header_length = 16
+  let (header_length, usbmuxd_address) = 16, Unix.ADDR_UNIX "/var/run/usbmuxd"
+
+  let listen_message =
+    Plist.(Dict [("MessageType", String "Listen");
+                 ("ClientVersionString", String "ocaml-usbmux");
+                 ("ProgName", String "ocaml-usbmux")]
+           |> make)
+
+  let msg_length msg = String.length msg + header_length
+
+  let listen_msg_len = msg_length listen_message
 
   let read_header i_chan =
     i_chan |> Lwt_io.atomic begin fun ic ->
@@ -58,11 +68,6 @@ module Protocol = struct
       |> Lwt_list.iter_s (Lwt_io.LE.write_int32 oc)
     end
 
-  let listen_message =
-    Plist.(Dict [("MessageType", String "Listen");
-                 ("ClientVersionString", String "ocaml-usbmux");
-                 ("ProgName", String "ocaml-usbmux")]
-           |> make)
 
   let log_reply = function
     | Result Success -> Lwt_log.info (colored_message "Listening for iDevices")
@@ -157,6 +162,8 @@ module Relay = struct
 
   type conn_t = Connected | Disconnected
 
+  (* let listeners = Stack.create () *)
+
   let string_of_c_event = function
     | Connected -> "connected"
     | Disconnected -> "disconnected"
@@ -217,13 +224,36 @@ module Relay = struct
     in
     Lwt_log.info (colored_message "Started TCP routing server") >>= keep_listening sock
 
-  let create_listener () =
-    Lwt_io.printl "Started Listener Code"
+  let create_listener debug port =
+    (* 1) Tell usbmux that we are interested in listening
+       2) Tell usbmux to connect for certain device ID/udid/port
+       3) Take all messages coming for server and write them to the oc of the socket connected to usbmux
+       4) Take all messages that come back from the usbmux socket and write to the TCP socket *)
+    let %lwt _ = Protocol.create_listener debug
+    and _ =
+      (* Here do the connect to a device for a tunneled tcp connection logic *)
 
-  let begin_relay udid port_pairs =
+      Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
+        let msg = connect_message 4 port in
+        let total_len = (String.length msg) + Protocol.header_length in
+        Protocol.write_header ~total_len mux_oc >>= fun () ->
+        Lwt_io.write_from_string mux_oc msg 0 (String.length msg) >>= fun c ->
+        Protocol.read_header mux_ic >>= fun (msg_len, version, request, tag) ->
+        let buffer = Bytes.create (msg_len - Protocol.header_length) in
+
+        Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - 16) >>= fun () ->
+
+        Plist.parse_dict buffer |> B.pretty_to_string |> Lwt_io.printl
+
+      end
+    in
+    Lwt.return_unit
+
+  let begin_relay debug udid port_pairs =
     (* This is a parallel binding, both will go off *)
+    (* Need to switch order? *)
     let%lwt _ = create_tcp_server udid port_pairs
-    and _ = create_listener () in
+    and _ = create_listener debug 2000 in
     Lwt.return_unit
 
 end
