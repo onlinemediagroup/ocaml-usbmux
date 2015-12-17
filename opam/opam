@@ -3,9 +3,9 @@ name: "usbmux"
 version: "0.1"
 maintainer: "Edgar Aroutiounian <edgar.factorial@gmail.com>"
 authors: [ "Edgar Aroutiounian <edgar.factorial@gmail.com>" ]
-license: "BSD-3-clause"
-homepage: "https://github.com/fxfactorial/ocaml-usbmux"
-bug-reports: "https://github.com/fxfactorial/ocaml-usbmux/issues"
+license: "PROP"
+homepage: "https://github.com/onlinemediagroup/ocaml-usbmux"
+bug-reports: "https://github.com/onlinemediagroup/ocaml-usbmux/issues"
 build: [
   ["ocaml" "setup.ml" "-configure" "--prefix" prefix]
   ["ocaml" "setup.ml" "-build"]
@@ -20,9 +20,10 @@ build-test: [
   ["ocaml" "setup.ml" "-test"]
 ]
 depends: [
+  "ANSITerminal"
   "cmdliner" {build}
-  ("lwt" | "lwt-android")
+  "lwt"
   "ocamlfind" {build}
   "plist"
-  ("yojson" | "yojson-android")
+  "yojson"
 ]

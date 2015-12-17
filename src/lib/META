@@ -1,7 +1,7 @@
 # OASIS_START
-# DO NOT EDIT (digest: 92301792da308777a330f95da4232dc5)
+# DO NOT EDIT (digest: 9571f1f7ab8401eaa15571024e88ac29)
 version = "0.1"
-description = "ocaml program"
+description = "Control port remapping for iOS devices"
 requires = "lwt.unix lwt.ppx plist yojson ANSITerminal"
 archive(byte) = "usbmux.cma"
 archive(byte, plugin) = "usbmux.cma"

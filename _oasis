@@ -1,13 +1,16 @@
 OASISFormat: 0.4
 Name:        usbmux
 Version:     0.1
-Synopsis:    ocaml program
+Synopsis:    Control port remapping for iOS devices
 Authors:     Edgar Aroutiounian <edgar.factorial@gmail.com>
 Maintainers: Edgar Aroutiounian <edgar.factorial@gmail.com>
-Homepage:    https://github.com/fxfactorial/ocaml-usbmux
-License:     BSD-3-clause
+Homepage:    https://github.com/onlinemediagroup/ocaml-usbmux
+License:     Prop
 Plugins:     META (0.4), DevFiles (0.4)
 BuildTools: ocamlbuild
+
+PostBuildCommand:
+  sh install_man.sh
 
 Description:
   Talk to iDevices
@@ -15,8 +18,10 @@ Description:
 Library usbmux
   Path:         src/lib
   Modules:      Usbmux
+  install: true
   CompiledObject: native
-  BuildDepends: lwt.unix, lwt.ppx, plist, yojson, ANSITerminal
+  BuildDepends:
+    lwt.unix, lwt.ppx, plist, yojson, ANSITerminal
 
 Executable gandalf
   Path: src/app

@@ -1,0 +1,40 @@
+.\" Pipe this output to groff -man -Tutf8 | less
+.\"
+.TH "GANDALF" 1 "" "Gandalf 0.1" "Gandalf Manual"
+.\" Disable hyphenation and ragged-right
+.nh
+.ad l
+.SH NAME
+.P
+gandalf \- Control TCP forwarding for sshing iDevices
+.SH SYNOPSIS
+.P
+\fBgandalf\fR [\fIOPTION\fR]... [\fIARG\fR]...
+.SH DESCRIPTION
+.P
+\fB gandalf\fR is a program for controlling the interface of ssh tcp iphone
+.SH OPTIONS
+.TP 4
+\fB\-d\fR, \fB\-\-daemonize\fR
+Whether \fB gandalf\fR should run as a daemon
+.TP 4
+\fB\-\-help\fR[=\fIFMT\fR] (default=pager)
+Show this help in format \fIFMT\fR (pager, plain or groff).
+.TP 4
+\fB\-l\fR, \fB\-\-listen\fR
+Listen for connections
+.TP 4
+\fB\-t\fR \fIVAL\fR, \fB\-\-tries\fR=\fIVAL\fR
+How many times to retry tunneling connections in case they fail, defaults to 3
+.TP 4
+\fB\-u\fR \fIVAL\fR, \fB\-\-udid\fR=\fIVAL\fR
+Specify device to connect to by UDID
+.TP 4
+\fB\-v\fR, \fB\-\-verbose\fR
+Output Debugging Info
+.TP 4
+\fB\-\-version\fR
+Show version information.
+.SH AUTHOR
+.P
+Edgar Aroutiounian

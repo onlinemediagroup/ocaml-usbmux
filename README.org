@@ -1,0 +1,61 @@
+#+AUTHOR:   Edgar Aroutiounian
+#+EMAIL:    edgar.factorial@gmail.com
+#+LANGUAGE: en
+#+STARTUP: indent
+#+LATEX_HEADER: \usepackage{lmodern}
+#+LATEX_HEADER: \usepackage[T1]{fontenc}
+#+OPTIONS:  toc:nil num:0
+
+This is a library and command line tool to control port forwarding to
+iOS devices.
+
+Basically, it lets you do:
+
+#+BEGIN_SRC shell
+$ ssh root@localhost -p 2000
+#+END_SRC
+
+and you get a shell to a iDevice connected over a USB wire.
+
+* Installation
+First you need to have ~plist~ installed on your machine.
+
+#+BEGIN_SRC shell
+$ opam install plist
+#+END_SRC
+
+Now in this cloned repository, do: 
+
+#+BEGIN_SRC shell
+$ opam pin add usbmux . -y
+#+END_SRC
+
+This should install both the command line tool gandalf and the usbmux
+OCaml library.
+
+* gandalf usage.
+You can use the command line tool just by using it on the comamnd
+line.
+
+#+BEGIN_SRC shell
+$ gandalf
+
+#+END_SRC
+
+This will start up ~gandalf~ which will forward requests....
+
+to be continued...
+
+~gandalf~ can be louder about what's happening behind the scenes by
+invoking it with the ~-v~, ~--verbose~ flag.
+
+Check out the man page, accessible with:
+#+BEGIN_SRC shell
+$ gandalf --help
+#+END_SRC
+
+or 
+
+#+BEGIN_SRC shell
+$ man gandalf
+#+END_SRC
