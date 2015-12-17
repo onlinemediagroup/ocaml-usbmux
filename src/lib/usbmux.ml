@@ -209,13 +209,17 @@ module Relay = struct
 
     end
 
-  let begin_relay debug udid port_pairs =
+  let begin_relay debug udid port_pairs retry_count do_daemonize =
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, 2000)) in
     let _ =
       Lwt_io.establish_server server_address begin fun with_tcp_client ->
         catch
           (running_tunnel debug with_tcp_client)
-          (fun exn -> Lwt_io.printl (Printexc.to_string exn))
+          Unix.(begin function
+                Unix_error(ECONNREFUSED, _, _) as e -> return_unit
+              | _ -> return_unit
+          end)
+          (* (fun exn -> Lwt_io.printl (Printexc.to_string exn)) *)
         |> ignore_result
       end
     in

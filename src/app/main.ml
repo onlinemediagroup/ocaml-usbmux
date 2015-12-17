@@ -22,36 +22,25 @@ let do_daemonize =
   let doc = "Whether $(b, $(tname)) should run as a daemon" in
   value & flag & info ["d";"daemonize"] ~doc
 
+let retry_count =
+  let open Arg in
+  let doc = "How many times to retry tunneling connections in \
+             case they fail, defaults to 3"
+  in
+  value & opt (some int) None & info ["t"; "tries"] ~doc
+
 let begin_program
     do_listen
-    be_verbose
+    debug
     picked_udid
-    forward_connection
-    do_daemonize =
+    port_pairs
+    do_daemonize
+    retry_count =
   (* Black magic for the entire running process *)
-  if be_verbose then Lwt_log.add_rule "*" Lwt_log.Info;
+  if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
-  let rec do_start retry_count =
-    try%lwt
-      match (do_listen, picked_udid, forward_connection, do_daemonize) with
-      | (true, _, _, _) ->
-        Usbmux.Protocol.create_listener be_verbose ()
-      | (_, picked_udid, pairs, _) ->
-        Usbmux.Relay.begin_relay be_verbose picked_udid pairs
-    with
-    | Unix.Unix_error (Unix.ECONNREFUSED, _, _) ->
-      (* Maybe add logic to do the spawning, will need 2 more command
-         line args *)
-      if retry_count = 2
-      then
-        Printf.sprintf "Tried %d times, check if usbmuxd is running" (retry_count + 1)
-        |> Usbmux.colored_message ~m_color:Usbmux.T.Red |> Lwt_io.printl
-      else do_start (retry_count + 1)
-    | otherwise -> Lwt_log.ign_error (Printexc.to_string otherwise) |> Lwt.return
-  in
-  do_start 0
-
-(* ssh root@localhost -p 2222   *)
+  if do_listen then Usbmux.Protocol.create_listener debug ()
+  else Usbmux.Relay.begin_relay debug picked_udid port_pairs retry_count do_daemonize
 
 let entry_point =
   Term.(pure
@@ -60,7 +49,8 @@ let entry_point =
         $ be_verbose
         $ picked_udid
         $ forward_connection
-        $ do_daemonize)
+        $ do_daemonize
+        $ retry_count)
 
 let top_level_info =
   let doc = "Control TCP forwarding for sshing iDevices" in
