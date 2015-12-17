@@ -162,8 +162,6 @@ module Relay = struct
 
   type conn_t = Connected | Disconnected
 
-  (* let listeners = Stack.create () *)
-
   let string_of_c_event = function
     | Connected -> "connected"
     | Disconnected -> "disconnected"
@@ -179,85 +177,51 @@ module Relay = struct
     |> colored_message
     |> Lwt_log.info
 
-  let handle_signals sock =
-    ignore begin Sys.(signal sigint (Signal_handle begin fun _ ->
-        Lwt_unix.unix_file_descr sock |> Unix.close;
-        exit 0
-      end))
-    end
-
   (* Note: PortNumber must be network-endian, so it gets byte swapped here *)
-  let connect_message device_id port =
+  let connect_message ~device_id ~device_port =
     Plist.((Dict [("MessageType", String "Connect");
                   ("ClientVersionString", String "ocaml-usbmux");
                   ("ProgName", String "ocaml-usbmux");
                   ("DeviceID", Integer device_id);
-                  ("PortNumber", Integer (byte_swap_16 port))])
+                  ("PortNumber", Integer (byte_swap_16 device_port))])
            |> make)
 
-  let handle_connection (client_sock, client_info) =
-    let (ic, _) =
-      Lwt_io.of_fd ~mode:Lwt_io.Input client_sock,
-      Lwt_io.of_fd ~mode:Lwt_io.Output client_sock
-    in
+  let running_tunnel debug (tcp_ic, tcp_oc) () =
+    Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
+      let msg = connect_message ~device_id:21 ~device_port:22 in
 
-    let rec read_all () =
-      (* Here need to pass off to the local socket *)
-      try%lwt
-        Lwt_io.read_line ic >>= Lwt_io.printl >>= read_all
-      (* When other side disconnected but we don't want to kill the
-         server, just loops again. See keep_listening *)
-      with End_of_file -> log_client client_info Disconnected
+      let%lwt _ = Protocol.create_listener debug
+      and _ =
+        (* Our program logic of piping
+           Announce our intention of writing *)
+        let open Protocol in
+        write_header ~total_len:(msg_length msg) mux_oc >>= fun () ->
+        Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>= fun () ->
+        (* Read the reply, should be good to start just raw piping *)
+        read_header mux_ic >>= fun (msg_len, _, _, _) ->
 
-    in
-    log_client client_info Connected >>= read_all
-
-  let create_tcp_server udid port_pairs =
-    let open Lwt_unix in
-    let sock = socket PF_INET SOCK_STREAM 0 in
-    setsockopt sock SO_REUSEADDR true;
-    handle_signals sock;
-    bind sock (ADDR_INET(Unix.inet_addr_loopback, 2000));
-    listen sock 20;
-    let rec keep_listening on_socket () =
-      accept on_socket >>= handle_connection >>= keep_listening on_socket
-    in
-    Lwt_log.info (colored_message "Started TCP routing server") >>= keep_listening sock
-
-  let start_listener_and_forward debug port =
-    (* 1) Tell usbmux that we are interested in listening
-       2) Tell usbmux to connect for certain device ID/udid/port
-       3) Take all messages coming for server and write them to the oc of the socket connected to usbmux
-       4) Take all messages that come back from the usbmux socket and write to the TCP socket *)
-    let %lwt _ = Protocol.create_listener debug
-    and _ =
-      (* Here do the connect to a device for a tunneled tcp connection logic *)
-
-      Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
-        (* Hardcoded device number *)
-        let msg = connect_message 4 port in
-        let total_len = (String.length msg) + Protocol.header_length in
-        Protocol.write_header ~total_len mux_oc >>= fun () ->
-        (* print_endline msg; *)
-        Lwt_io.write_from_string mux_oc msg 0 (String.length msg) >>= fun c ->
-        Protocol.read_header mux_ic >>= fun (msg_len, version, request, tag) ->
-        let buffer = Bytes.create (msg_len - Protocol.header_length) in
+        let buffer = Bytes.create (msg_len - header_length) in
 
         Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - 16) >>= fun () ->
 
-        print_endline buffer;
-        Plist.parse_dict buffer |> B.pretty_to_string |> Lwt_io.printl
+        let echo ic oc = Lwt_io.(write_chars oc (read_chars ic)) in
+        echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
 
-      end
-    in
-    Lwt.return_unit
+      in
+      Lwt.return_unit
+    end
 
   let begin_relay debug udid port_pairs =
-    (* This is a parallel binding, both will go off *)
-    (* Need to switch order? *)
-    let%lwt _ = create_tcp_server udid port_pairs
-    (* Hardcoded port number of 22, needs to later be Lwt_list.iter_p *)
-    and _ = start_listener_and_forward debug 22 in
-    Lwt.return_unit
+    let server_address = Unix.(ADDR_INET (inet_addr_loopback, 2000)) in
+    let _ =
+      Lwt_io.establish_server server_address begin fun with_tcp_client ->
+        catch
+          (running_tunnel debug with_tcp_client)
+          (fun exn -> Lwt_io.printl (Printexc.to_string exn))
+        |> ignore_result
+      end
+    in
+    let (t, _) = wait () in
+    t
 
 end
