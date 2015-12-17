@@ -211,16 +211,28 @@ module Relay = struct
 
   let begin_relay debug udid port_pairs retry_count do_daemonize =
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, 2000)) in
+    let max_try_count =
+      match retry_count with None -> 3 | Some i -> assert (i > 0 && i < 20); i
+    in
     let _ =
       Lwt_io.establish_server server_address begin fun with_tcp_client ->
-        catch
-          (running_tunnel debug with_tcp_client)
-          Unix.(begin function
-                Unix_error(ECONNREFUSED, _, _) as e -> return_unit
-              | _ -> return_unit
-          end)
-          (* (fun exn -> Lwt_io.printl (Printexc.to_string exn)) *)
-        |> ignore_result
+        let rec do_start retry_count () =
+          if retry_count = max_try_count
+          then colored_message ~m_color:T.Red (Printf.sprintf "Tried %d times, gave up" retry_count)
+               |> Lwt_io.printl
+          else begin catch
+              (running_tunnel debug with_tcp_client)
+              Unix.(begin function
+                    Unix_error(ECONNREFUSED, _, _) ->
+                    retry_count
+                    |> Lwt_log.info_f "Attempt %d, could not connect to usbmuxd, check if its running" >>=
+                    do_start (retry_count + 1)
+                  (* Handle other cases of interest, maybe EBADF? *)
+                  | _ -> do_start (retry_count + 1) ()
+                end)
+          end
+        in
+        do_start 1 () |> ignore_result
       end
     in
     let (t, _) = wait () in
