@@ -29,7 +29,7 @@ let begin_program
     try%lwt
       match (do_listen, picked_udid, forward_connection) with
       | (true, _, _) ->
-        Usbmux.Protocol.create_listener be_verbose
+        Usbmux.Protocol.create_listener be_verbose ()
       | (_, picked_udid, pairs) ->
         Usbmux.Relay.begin_relay be_verbose picked_udid pairs
     with

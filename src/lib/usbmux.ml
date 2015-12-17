@@ -114,7 +114,7 @@ module Protocol = struct
       Lwt_io.printlf "Device %d disconnected" d
     | _ -> return ()
 
-  let create_listener debug =
+  let create_listener debug () =
     let total_len = (String.length listen_message) + header_length in
     Lwt_io.with_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") begin fun (ic, oc) ->
       (* Send the header for our listen message *)
@@ -188,12 +188,10 @@ module Relay = struct
 
   let running_tunnel debug (tcp_ic, tcp_oc) () =
     Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
-      let msg = connect_message ~device_id:21 ~device_port:22 in
+      let msg = connect_message ~device_id:9 ~device_port:22 in
 
-      let%lwt _ = Protocol.create_listener debug
-      and _ =
-        (* Our program logic of piping
-           Announce our intention of writing *)
+      let do_relay () =
+
         let open Protocol in
         write_header ~total_len:(msg_length msg) mux_oc >>= fun () ->
         Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>= fun () ->
@@ -208,7 +206,9 @@ module Relay = struct
         echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
 
       in
-      Lwt.return_unit
+      [Protocol.create_listener debug; do_relay]
+      |> Lwt_list.iter_p (fun g -> g ())
+
     end
 
   let begin_relay debug udid port_pairs =
