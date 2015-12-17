@@ -103,17 +103,22 @@ module Protocol = struct
       |> return
     | otherwise -> Lwt.fail (Unknown_reply otherwise)
 
-  let handle r () = match r with
-    (* Come back to this *)
-    | Result (Success | Device_requested_not_connected) -> return ()
+  let handle show_connections r () = match r with
+    | Result (Success | Device_requested_not_connected) -> ()
     | Event Attached { serial_number; connection_speed = _; connection_type = _;
                        product_id = _; location_id = _; device_id; } ->
-      Lwt_io.printlf "Device %d with serial number: %s connected" device_id serial_number
+      if show_connections
+      then
+        Printf.sprintf "Device %d with serial number: %s connected" device_id serial_number
+        |> print_endline
     | Event Detached d ->
-      Lwt_io.printlf "Device %d disconnected" d
-    | _ -> return ()
+      if show_connections
+      then
+        Printf.sprintf "Device %d disconnected" d
+        |> print_endline
+    | _ -> ()
 
-  let create_listener debug () =
+  let create_listener debug show_connections () =
     let total_len = (String.length listen_message) + header_length in
     Lwt_io.with_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") begin fun (ic, oc) ->
       (* Send the header for our listen message *)
@@ -149,8 +154,8 @@ module Protocol = struct
         Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
         if debug then print_endline (Plist.parse_dict buffer |> B.pretty_to_string);
         parse_reply buffer () >>= fun reply ->
-        if debug then handle_reply reply >>= handle reply >>= forever
-        else handle reply () >>= forever
+        if debug then handle_reply reply >|= handle show_connections reply >>= forever
+        else handle show_connections reply () |> return >>= forever
       in
       forever ()
     end
@@ -204,7 +209,7 @@ module Relay = struct
         echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
 
       in
-      [Protocol.create_listener debug; do_relay]
+      [Protocol.create_listener debug false; do_relay]
       |> Lwt_list.iter_p (fun g -> g ())
 
     end

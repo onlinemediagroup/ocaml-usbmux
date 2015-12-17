@@ -39,7 +39,7 @@ let begin_program
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
-  if do_listen then Usbmux.Protocol.create_listener debug ()
+  if do_listen then Usbmux.Protocol.create_listener debug false ()
   else Usbmux.Relay.begin_relay debug picked_udid port_pairs retry_count do_daemonize
 
 let entry_point =
