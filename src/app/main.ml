@@ -17,20 +17,26 @@ let forward_connection =
   let doc = "What ports to do forwarding on, example 22:5000" in
   value & pos_all (pair ~sep:':' int int) [] (info [] ~doc)
 
+let do_daemonize =
+  let open Arg in
+  let doc = "Whether $(b, $(tname)) should run as a daemon" in
+  value & flag & info ["d";"daemonize"] ~doc
+
 let begin_program
     do_listen
     be_verbose
     picked_udid
-    forward_connection =
+    forward_connection
+    do_daemonize =
   (* Black magic for the entire running process *)
   if be_verbose then Lwt_log.add_rule "*" Lwt_log.Info;
 
   let rec do_start retry_count =
     try%lwt
-      match (do_listen, picked_udid, forward_connection) with
-      | (true, _, _) ->
+      match (do_listen, picked_udid, forward_connection, do_daemonize) with
+      | (true, _, _, _) ->
         Usbmux.Protocol.create_listener be_verbose ()
-      | (_, picked_udid, pairs) ->
+      | (_, picked_udid, pairs, _) ->
         Usbmux.Relay.begin_relay be_verbose picked_udid pairs
     with
     | Unix.Unix_error (Unix.ECONNREFUSED, _, _) ->
@@ -53,7 +59,8 @@ let entry_point =
         $ do_listen
         $ be_verbose
         $ picked_udid
-        $ forward_connection)
+        $ forward_connection
+        $ do_daemonize)
 
 let top_level_info =
   let doc = "Control TCP forwarding for sshing iDevices" in
