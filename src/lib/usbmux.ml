@@ -68,19 +68,18 @@ module Protocol = struct
       |> Lwt_list.iter_s (Lwt_io.LE.write_int32 oc)
     end
 
-
-  let log_reply = function
+  let handle_reply = function
     | Result Success -> Lwt_log.info (colored_message "Listening for iDevices")
     | Result Device_requested_not_connected ->
       Lwt_log.info (colored_message ~m_color:T.Red "Device requested was not connected")
     | Result Port_requested_not_available ->
       Lwt_log.info (colored_message ~m_color:T.Red "Port requested was not available")
     | Result Malformed_request ->
-      Lwt_io.printl (colored_message ~m_color:T.Red "Malformed request, check the request")
+      Lwt_log.info (colored_message ~m_color:T.Red "Malformed request, check the request")
     (* Lazy, add rest here *)
     | _ -> return ()
 
-  let parse_reply raw_reply =
+  let parse_reply raw_reply () =
     let open Yojson.Basic in
     let handle = Plist.parse_dict raw_reply in
     match (Util.member "MessageType" handle) |> Util.to_string with
@@ -149,8 +148,8 @@ module Protocol = struct
         let buffer = Bytes.create (msg_len - header_length) in
         Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
         if debug then print_endline (Plist.parse_dict buffer |> B.pretty_to_string);
-        buffer |> parse_reply >>= fun reply ->
-        if debug then log_reply reply >>= handle reply >>= forever
+        parse_reply buffer () >>= fun reply ->
+        if debug then handle_reply reply >>= handle reply >>= forever
         else handle reply () >>= forever
       in
       forever ()
@@ -186,6 +185,8 @@ module Relay = struct
                   ("PortNumber", Integer (byte_swap_16 device_port))])
            |> make)
 
+  let echo ic oc = Lwt_io.(write_chars oc (read_chars ic))
+
   let running_tunnel debug (tcp_ic, tcp_oc) () =
     Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
       let msg = connect_message ~device_id:9 ~device_port:22 in
@@ -197,12 +198,9 @@ module Relay = struct
         Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>= fun () ->
         (* Read the reply, should be good to start just raw piping *)
         read_header mux_ic >>= fun (msg_len, _, _, _) ->
-
         let buffer = Bytes.create (msg_len - header_length) in
-
-        Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - 16) >>= fun () ->
-
-        let echo ic oc = Lwt_io.(write_chars oc (read_chars ic)) in
+        Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - 16) >>=
+        parse_reply buffer >>= handle_reply >>= fun () ->
         echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
 
       in
