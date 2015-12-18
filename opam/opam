@@ -25,5 +25,6 @@ depends: [
   "lwt"
   "ocamlfind" {build}
   "plist"
+  "stringext"
   "yojson"
 ]

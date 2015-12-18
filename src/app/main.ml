@@ -1,25 +1,19 @@
 open Cmdliner
 
-let do_listen =
-  let doc = "Listen for connections" in
-  Arg.(value & flag & info ["l"; "listen"] ~doc)
-
 let be_verbose =
   let doc = "Output Debugging Info" in
   Arg.(value & flag & info ["v";"verbose"] ~doc)
 
-let picked_udid =
-  let doc = "Specify device to connect to by UDID" in
-  Arg.(value & opt (some string) None & info ["u"; "udid"] ~doc)
-
-let forward_connection =
+let forward_connection_file =
   let open Arg in
-  let doc = "What ports to do forwarding on, example 22:5000" in
-  value & pos_all (pair ~sep:':' int int) [] (info [] ~doc)
+  let doc = "Simple file mapping udid to ports, expecting a file \
+             like 123gfdgefrgt234:2000"
+  in
+  value & opt (some file) None & info ["m"; "mappings"] ~doc
 
 let do_daemonize =
   let open Arg in
-  let doc = "Whether $(b, $(tname)) should run as a daemon" in
+  let doc = "Whether$(b, $(tname)) should run as a daemon" in
   value & flag & info ["d";"daemonize"] ~doc
 
 let retry_count =
@@ -30,25 +24,22 @@ let retry_count =
   value & opt (some int) None & info ["t"; "tries"] ~doc
 
 let begin_program
-    do_listen
     debug
-    picked_udid
     port_pairs
     do_daemonize
     retry_count =
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
-  if do_listen then Usbmux.Protocol.create_listener debug true ()
-  else Usbmux.Relay.begin_relay debug picked_udid port_pairs retry_count do_daemonize
+  match port_pairs with
+  | None -> Usbmux.Protocol.create_listener debug true ()
+  | Some file -> Usbmux.Relay.begin_relay debug file retry_count do_daemonize
 
 let entry_point =
   Term.(pure
           begin_program
-        $ do_listen
         $ be_verbose
-        $ picked_udid
-        $ forward_connection
+        $ forward_connection_file
         $ do_daemonize
         $ retry_count)
 
@@ -57,6 +48,10 @@ let top_level_info =
   let man = [`S "DESCRIPTION";
              `P "$(b, $(tname)) is a program for controlling \
                  the interface of ssh tcp iphone";
+             `S "USAGE";
+             `P "if$(b, $(tname)) is invoked with no arguments then it begins \
+                 in listen mode, which means it will just show the DeviceIDs as assigned \
+                 by usbmuxd and the device's udid.";
              `S "AUTHOR";
              `P "Edgar Aroutiounian"]
   in

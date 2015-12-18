@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: cf27abd5123e6d6a2e28a07ac02d2879)
+# DO NOT EDIT (digest: 21d1a7c118ebff817765370becb5dac4)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -20,6 +20,7 @@ true: annot, bin_annot
 <src/lib/*.ml{,i,y}>: pkg_lwt.ppx
 <src/lib/*.ml{,i,y}>: pkg_lwt.unix
 <src/lib/*.ml{,i,y}>: pkg_plist
+<src/lib/*.ml{,i,y}>: pkg_stringext
 <src/lib/*.ml{,i,y}>: pkg_yojson
 # Executable gandalf
 "src/app/main.native": pkg_ANSITerminal
@@ -27,6 +28,7 @@ true: annot, bin_annot
 "src/app/main.native": pkg_lwt.ppx
 "src/app/main.native": pkg_lwt.unix
 "src/app/main.native": pkg_plist
+"src/app/main.native": pkg_stringext
 "src/app/main.native": pkg_yojson
 "src/app/main.native": use_usbmux
 <src/app/*.ml{,i,y}>: pkg_ANSITerminal
@@ -34,6 +36,7 @@ true: annot, bin_annot
 <src/app/*.ml{,i,y}>: pkg_lwt.ppx
 <src/app/*.ml{,i,y}>: pkg_lwt.unix
 <src/app/*.ml{,i,y}>: pkg_plist
+<src/app/*.ml{,i,y}>: pkg_stringext
 <src/app/*.ml{,i,y}>: pkg_yojson
 <src/app/*.ml{,i,y}>: use_usbmux
 # OASIS_STOP

@@ -194,7 +194,7 @@ module Relay = struct
 
   let running_tunnel debug (tcp_ic, tcp_oc) () =
     Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
-      let msg = connect_message ~device_id:9 ~device_port:22 in
+      let msg = connect_message ~device_id:11 ~device_port:22 in
 
       let do_relay () =
 
@@ -214,11 +214,26 @@ module Relay = struct
 
     end
 
-  let begin_relay debug udid port_pairs retry_count do_daemonize =
+  let load_mappings file_name =
+    Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >>= fun all_names ->
+    let udid_to_port = Hashtbl.create (List.length all_names) in
+    let port_to_udid = Hashtbl.create (List.length all_names) in
+    all_names |> List.iter begin fun line ->
+      match Stringext.split line ~on:':' with
+      | udid :: port_number :: [] ->
+        Hashtbl.add udid_to_port udid (port_number |> int_of_string);
+        Hashtbl.add port_to_udid (port_number |> int_of_string) udid
+      (* Need to do some kind of exception here, come back to it *)
+      | _ -> assert false
+    end;
+    return (udid_to_port, port_to_udid)
+
+  let begin_relay debug m_file retry_count do_daemonize =
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, 2000)) in
     let max_try_count =
       match retry_count with None -> 3 | Some i -> assert (i > 0 && i < 20); i
     in
+    load_mappings m_file >>= fun (udid_to_port, port_to_udid) ->
     let _ =
       Lwt_io.establish_server server_address begin fun with_tcp_client ->
         let rec do_start retry_count () =
@@ -227,14 +242,13 @@ module Relay = struct
                |> Lwt_io.printl
           else begin catch
               (running_tunnel debug with_tcp_client)
-              Unix.(begin function
+              Unix.(function
                     Unix_error(ECONNREFUSED, _, _) ->
                     retry_count
                     |> Lwt_log.info_f "Attempt %d, could not connect to usbmuxd, check if its running" >>=
                     do_start (retry_count + 1)
                   (* Handle other cases of interest, maybe EBADF? *)
-                  | _ -> do_start (retry_count + 1) ()
-                end)
+                  | _ -> do_start (retry_count + 1) ())
           end
         in
         do_start 1 () |> ignore_result
