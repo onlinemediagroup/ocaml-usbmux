@@ -59,6 +59,6 @@ let top_level_info =
 
 let () =
   match Term.eval (entry_point, top_level_info) with
-  | `Ok program -> Lwt_main.run program
+  | `Ok program -> Lwt_main.run program |> ignore
   | `Error _ -> prerr_endline "Something errored"
   | _ -> ()

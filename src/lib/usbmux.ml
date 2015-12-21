@@ -1,4 +1,4 @@
-open Lwt
+open Lwt.Infix
 module T = ANSITerminal
 module B = Yojson.Basic
 module U = Yojson.Basic.Util
@@ -77,17 +77,17 @@ module Protocol = struct
     | Result Malformed_request ->
       Lwt_log.info (colored_message ~m_color:T.Red "Malformed request, check the request")
     (* Lazy, add rest here *)
-    | _ -> return ()
+    | _ -> Lwt.return ()
 
   let parse_reply raw_reply () =
     let open Yojson.Basic in
     let handle = Plist.parse_dict raw_reply in
     match (Util.member "MessageType" handle) |> Util.to_string with
     | "Result" -> (match (Util.member "Number" handle) |> Util.to_int with
-        | 0 -> Result Success |> return
-        | 2 -> Result Device_requested_not_connected |> return
-        | 3 -> Result Port_requested_not_available |> return
-        | 5 -> Result Malformed_request |> return
+        | 0 -> Result Success |> Lwt.return
+        | 2 -> Result Device_requested_not_connected |> Lwt.return
+        | 3 -> Result Port_requested_not_available |> Lwt.return
+        | 5 -> Result Malformed_request |> Lwt.return
         | n -> Lwt.fail (Unknown_reply (Printf.sprintf "Unknown result code: %d" n)))
     | "Attached" ->
       Event (Attached
@@ -97,28 +97,27 @@ module Protocol = struct
                 product_id = Util.member "ProductID" handle |> Util.to_int;
                 location_id = Util.member "LocationID" handle |> Util.to_int;
                 device_id = Util.member "DeviceID" handle |> Util.to_int ;})
-      |> return
+      |> Lwt.return
     | "Detached" ->
       Event (Detached (Util.member "DeviceID" handle |> Util.to_int))
-      |> return
+      |> Lwt.return
     | otherwise -> Lwt.fail (Unknown_reply otherwise)
 
-  let handle show_connections r () = match r with
+  let handle ?conn_table show_connections r () = match r with
     | Result (Success | Device_requested_not_connected) -> ()
-    | Event Attached { serial_number; connection_speed = _; connection_type = _;
-                       product_id = _; location_id = _; device_id; } ->
+    | Event Attached { serial_number = s; connection_speed = _; connection_type = _;
+                       product_id = _; location_id = _; device_id = d; } ->
+      (match conn_table with None -> () | Some t -> Hashtbl.add t d s);
       if show_connections
-      then
-        Printf.sprintf "Device %d with serial number: %s connected" device_id serial_number
-        |> print_endline
+      then Printf.sprintf "Device %d with serial number: %s connected" d s
+           |> print_endline
     | Event Detached d ->
+      (match conn_table with None -> () | Some t -> Hashtbl.remove t d);
       if show_connections
-      then
-        Printf.sprintf "Device %d disconnected" d
-        |> print_endline
+      then Printf.sprintf "Device %d disconnected" d |> print_endline
     | _ -> ()
 
-  let create_listener debug show_connections () =
+  let create_listener ?conn_table debug show_connections () =
     let total_len = (String.length listen_message) + header_length in
     Lwt_io.with_connection (Unix.ADDR_UNIX "/var/run/usbmuxd") begin fun (ic, oc) ->
       (* Send the header for our listen message *)
@@ -152,10 +151,10 @@ module Protocol = struct
                 msg_len version request tag)) >>= fun () ->
         let buffer = Bytes.create (msg_len - header_length) in
         Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
-        if debug then print_endline (Plist.parse_dict buffer |> B.pretty_to_string);
         parse_reply buffer () >>= fun reply ->
-        if debug then handle_reply reply >|= handle show_connections reply >>= forever
-        else handle show_connections reply () |> return >>= forever
+        if debug
+        then handle_reply reply >|= handle ?conn_table show_connections reply >>= forever
+        else handle show_connections reply () |> Lwt.return >>= forever
       in
       forever ()
     end
@@ -192,9 +191,9 @@ module Relay = struct
 
   let echo ic oc = Lwt_io.(write_chars oc (read_chars ic))
 
-  let running_tunnel debug (tcp_ic, tcp_oc) () =
+  let running_tunnel d_id debug (tcp_ic, tcp_oc) () =
     Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
-      let msg = connect_message ~device_id:11 ~device_port:22 in
+      let msg = connect_message ~device_id:d_id ~device_port:22 in
 
       let do_relay () =
 
@@ -215,46 +214,67 @@ module Relay = struct
     end
 
   let load_mappings file_name =
-    Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >>= fun all_names ->
-    let udid_to_port = Hashtbl.create (List.length all_names) in
-    let port_to_udid = Hashtbl.create (List.length all_names) in
-    all_names |> List.iter begin fun line ->
-      match Stringext.split line ~on:':' with
-      | udid :: port_number :: [] ->
-        Hashtbl.add udid_to_port udid (port_number |> int_of_string);
-        Hashtbl.add port_to_udid (port_number |> int_of_string) udid
-      (* Need to do some kind of exception here, come back to it *)
-      | _ -> assert false
-    end;
-    return (udid_to_port, port_to_udid)
+    Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >|= fun all_names ->
+    let prepped = all_names |> List.fold_left begin fun accum line ->
+      match (Stringext.trim_left line).[0] with
+      (* Ignore comments *)
+      | '#' -> accum
+      | _ ->
+        match Stringext.split line ~on:':' with
+        | udid :: port_number :: [] -> (udid, int_of_string port_number) :: accum
+        | _ -> assert false
+      end []
+    in
+    let t = Hashtbl.create (List.length prepped) in
+    prepped |> List.iter (fun (k, v) -> Hashtbl.add t k v);
+    t
+
+  let find_devices table =
+    Protocol.create_listener ~conn_table:table true false ()
 
   let begin_relay debug m_file retry_count do_daemonize =
-    let server_address = Unix.(ADDR_INET (inet_addr_loopback, 2000)) in
     let max_try_count =
       match retry_count with None -> 3 | Some i -> assert (i > 0 && i < 20); i
     in
-    load_mappings m_file >>= fun (udid_to_port, port_to_udid) ->
-    let _ =
-      Lwt_io.establish_server server_address begin fun with_tcp_client ->
-        let rec do_start retry_count () =
-          if retry_count = max_try_count
-          then colored_message ~m_color:T.Red (Printf.sprintf "Tried %d times, gave up" retry_count)
-               |> Lwt_io.printl
-          else begin catch
-              (running_tunnel debug with_tcp_client)
-              Unix.(function
-                    Unix_error(ECONNREFUSED, _, _) ->
-                    retry_count
-                    |> Lwt_log.info_f "Attempt %d, could not connect to usbmuxd, check if its running" >>=
-                    do_start (retry_count + 1)
-                  (* Handle other cases of interest, maybe EBADF? *)
-                  | _ -> do_start (retry_count + 1) ())
+    load_mappings m_file >>= fun device_mapping ->
+    let devices_table = Hashtbl.create 12 in
+    try%lwt
+      Lwt.pick [Lwt_unix.timeout 1.0;
+                Protocol.create_listener ~conn_table:devices_table true false ()]
+    with
+      Lwt_unix.Timeout ->
+      Hashtbl.fold begin fun device_id_key udid_value accum ->
+        try
+          (Hashtbl.find device_mapping udid_value, device_id_key) :: accum
+        with
+        (* Need to do some kind of logging *)
+          Not_found -> accum
+      end
+        devices_table []
+      |> Lwt.return >>= Lwt_list.iter_p begin fun (port, device_id) ->
+        let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
+        let _ =
+          Lwt_io.establish_server server_address begin fun with_tcp_client ->
+            let rec do_start retry_count () =
+              if retry_count = max_try_count
+              then colored_message ~m_color:T.Red (Printf.sprintf "Tried %d times, gave up" retry_count)
+                   |> Lwt_io.printl
+              else begin Lwt.catch
+                  (running_tunnel device_id debug with_tcp_client)
+                  Unix.(function
+                        Unix_error(ECONNREFUSED, _, _) ->
+                        retry_count
+                        |> Lwt_log.info_f "Attempt %d, could not connect to usbmuxd, check if its running" >>=
+                        do_start (retry_count + 1)
+                      (* Handle other cases of interest, maybe EBADF? *)
+                      | _ -> do_start (retry_count + 1) ())
+              end
+            in
+            do_start 1 () |> Lwt.ignore_result
           end
         in
-        do_start 1 () |> ignore_result
+        let (t, _) = Lwt.wait () in
+        t
       end
-    in
-    let (t, _) = wait () in
-    t
 
 end
