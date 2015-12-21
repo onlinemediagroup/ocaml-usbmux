@@ -229,9 +229,6 @@ module Relay = struct
     prepped |> List.iter (fun (k, v) -> Hashtbl.add t k v);
     t
 
-  let find_devices table =
-    Protocol.create_listener ~conn_table:table true false ()
-
   let begin_relay debug m_file retry_count do_daemonize =
     let max_try_count =
       match retry_count with None -> 3 | Some i -> assert (i > 0 && i < 20); i
