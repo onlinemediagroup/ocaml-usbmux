@@ -194,7 +194,6 @@ module Relay = struct
   let running_tunnel d_id debug (tcp_ic, tcp_oc) () =
     Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
       let msg = connect_message ~device_id:d_id ~device_port:22 in
-
       let do_relay () =
 
         let open Protocol in
@@ -230,6 +229,7 @@ module Relay = struct
     t
 
   let begin_relay debug m_file retry_count do_daemonize =
+    Lwt_io.set_default_buffer_size 32768;
     let max_try_count =
       match retry_count with None -> 3 | Some i -> assert (i > 0 && i < 20); i
     in
