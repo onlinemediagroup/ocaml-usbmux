@@ -215,13 +215,13 @@ module Relay = struct
   let load_mappings file_name =
     Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >|= fun all_names ->
     let prepped = all_names |> List.fold_left begin fun accum line ->
-      match (Stringext.trim_left line).[0] with
-      (* Ignore comments *)
-      | '#' -> accum
-      | _ ->
-        match Stringext.split line ~on:':' with
-        | udid :: port_number :: [] -> (udid, int_of_string port_number) :: accum
-        | _ -> assert false
+        match (Stringext.trim_left line).[0] with
+        (* Ignore comments *)
+        | '#' -> accum
+        | _ ->
+          match Stringext.split line ~on:':' with
+          | udid :: port_number :: [] -> (udid, int_of_string port_number) :: accum
+          | _ -> assert false
       end []
     in
     let t = Hashtbl.create (List.length prepped) in
@@ -248,7 +248,9 @@ module Relay = struct
           Not_found -> accum
       end
         devices_table []
-      |> Lwt.return >>= Lwt_list.iter_p begin fun (port, device_id) ->
+      |> fun port_and_d_ids ->
+      if do_daemonize then Lwt_daemon.daemonize ();
+      Lwt.return port_and_d_ids >>= Lwt_list.iter_p begin fun (port, device_id) ->
         let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
         let _ =
           Lwt_io.establish_server server_address begin fun with_tcp_client ->
