@@ -123,19 +123,10 @@ module Protocol = struct
       (* Send the header for our listen message *)
       write_header ~total_len oc >>= fun () ->
       (* Send the listen message body, aka the Plist *)
-      Lwt_io.write_from_string oc listen_message 0 (String.length listen_message) >>= fun c ->
-      Lwt_log.info
-        (Printf.sprintf "Needed to write: %d, actually wrote: %d" (total_len - header_length) c
-         |> colored_message) >>= fun () ->
+      Lwt_io.write_from_string oc listen_message 0 (String.length listen_message) >>= fun _ ->
 
       (* Read back the other side's header message *)
-      read_header ic >>= fun (msg_len, version, request, tag) ->
-
-      Lwt_log.info
-        (colored_message ~m_color:T.Green
-           (Printf.sprintf
-              "Len: %d, Version: %d, Request: %d, Tag: %d"
-              msg_len version request tag)) >>= fun () ->
+      read_header ic >>= fun (msg_len, _, _, _) ->
 
       let buffer = Bytes.create (msg_len - header_length) in
 
@@ -143,12 +134,7 @@ module Protocol = struct
 
       (* We know how long the message length ought to be, so let's just read that much *)
       let rec forever () =
-        read_header ic >>= fun (msg_len, version, request, tag) ->
-        Lwt_log.info
-          (colored_message ~m_color:T.Green
-             (Printf.sprintf
-                "Len: %d, Version: %d, Request: %d, Tag: %d"
-                msg_len version request tag)) >>= fun () ->
+        read_header ic >>= fun (msg_len, _, _, _) ->
         let buffer = Bytes.create (msg_len - header_length) in
         Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
         parse_reply buffer () >>= fun reply ->
@@ -244,8 +230,10 @@ module Relay = struct
         try
           (Hashtbl.find device_mapping udid_value, device_id_key) :: accum
         with
-        (* Need to do some kind of logging *)
-          Not_found -> accum
+          Not_found ->
+          Lwt_log.ign_info_f
+            "Device with udid: %s expected to be connected but wasn't" udid_value;
+          accum
       end
         devices_table []
       |> fun port_and_d_ids ->
