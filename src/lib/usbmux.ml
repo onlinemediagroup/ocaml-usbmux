@@ -222,6 +222,9 @@ module Relay = struct
     load_mappings m_file >>= fun device_mapping ->
     let devices_table = Hashtbl.create 12 in
     try%lwt
+      (* We do this because usbmuxd itself assigns device IDs and we
+         need to begin the listen message, then find out the device IDs
+         that usbmuxd has assigned per UDID, hence the timeout. *)
       Lwt.pick [Lwt_unix.timeout 1.0;
                 Protocol.create_listener ~conn_table:devices_table true false ()]
     with
@@ -244,15 +247,17 @@ module Relay = struct
           Lwt_io.establish_server server_address begin fun with_tcp_client ->
             let rec do_start retry_count () =
               if retry_count = max_try_count
-              then colored_message ~m_color:T.Red (Printf.sprintf "Tried %d times, gave up" retry_count)
+              then Printf.sprintf "Tried %d times, gave up" retry_count
+                   |> colored_message ~m_color:T.Red
                    |> Lwt_io.printl
               else begin Lwt.catch
                   (running_tunnel device_id debug with_tcp_client)
                   Unix.(function
                         Unix_error(ECONNREFUSED, _, _) ->
                         retry_count
-                        |> Lwt_log.info_f "Attempt %d, could not connect to usbmuxd, check if its running" >>=
-                        do_start (retry_count + 1)
+                        |> Lwt_log.info_f
+                          "Attempt %d, could not connect to usbmuxd, check if its running"
+                        >>= do_start (retry_count + 1)
                       (* Handle other cases of interest, maybe EBADF? *)
                       | _ -> do_start (retry_count + 1) ())
               end
