@@ -19,10 +19,11 @@ build-test: [
   ["ocaml" "setup.ml" "-build"]
   ["ocaml" "setup.ml" "-test"]
 ]
+available:[ocaml-version >= "4.02.3"]
 depends: [
   "ANSITerminal"
   "cmdliner" {build}
-  "lwt"
+  "lwt" { >= "2.5.1" }
   "ocamlfind" {build}
   "plist"
   "stringext"
