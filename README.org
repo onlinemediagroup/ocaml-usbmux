@@ -18,13 +18,7 @@ $ ssh root@localhost -p 2000
 and you get a shell to a iDevice connected over a USB wire.
 
 * Installation
-First you need to have ~plist~ installed on your machine.
-
-#+BEGIN_SRC shell
-$ opam install plist
-#+END_SRC
-
-Now in this cloned repository, do: 
+In this cloned repository, do: 
 
 #+BEGIN_SRC shell
 $ opam pin add usbmux . -y
@@ -39,12 +33,24 @@ line.
 
 #+BEGIN_SRC shell
 $ gandalf
-
 #+END_SRC
 
-This will start up ~gandalf~ which will forward requests....
+This will start up ~gandalf~ in listen mode, that is it will print out
+whenever a device connects or disconnects.
 
-to be continued...
+Doing:
+
+#+BEGIN_SRC shell
+$ gandalf -m mapping
+#+END_SRC
+
+...where m is a mapping file of lines in the form of:
+
+~b686cf1a8fa87fa861462955edf5811a71841447:2000~
+hashmarks are comments.
+
+you can also daemonize ~gandalf~ with the ~-d~ flag.
+
 
 ~gandalf~ can be louder about what's happening behind the scenes by
 invoking it with the ~-v~, ~--verbose~ flag.

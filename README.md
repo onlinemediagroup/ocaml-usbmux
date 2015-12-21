@@ -11,13 +11,7 @@ and you get a shell to a iDevice connected over a USB wire.
 
 # Installation
 
-First you need to have `plist` installed on your machine.
-
-```shell
-$ opam install plist
-```
-
-Now in this cloned repository, do: 
+In this cloned repository, do: 
 
 ```shell
 $ opam pin add usbmux . -y
@@ -35,9 +29,21 @@ line.
 $ gandalf
 ```
 
-This will start up `gandalf` which will forward requests&#x2026;.
+This will start up `gandalf` in listen mode, that is it will print out
+whenever a device connects or disconnects.
 
-to be continued&#x2026;
+Doing:
+
+```shell
+$ gandalf -m mapping
+```
+
+&#x2026;where m is a mapping file of lines in the form of:
+
+`b686cf1a8fa87fa861462955edf5811a71841447:2000`
+hashmarks are comments.
+
+you can also daemonize `gandalf` with the `-d` flag.
 
 `gandalf` can be louder about what's happening behind the scenes by
 invoking it with the `-v`, `--verbose` flag.
