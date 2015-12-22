@@ -42,6 +42,8 @@ module Protocol = struct
 
   let (header_length, usbmuxd_address) = 16, Unix.ADDR_UNIX "/var/run/usbmuxd"
 
+  let table_lock = Lwt_mutex.create ()
+
   let listen_message =
     Plist.(Dict [("MessageType", String "Listen");
                  ("ClientVersionString", String "ocaml-usbmux");
@@ -104,18 +106,27 @@ module Protocol = struct
     | otherwise -> Lwt.fail (Unknown_reply otherwise)
 
   let handle ?conn_table show_connections r () = match r with
-    | Result (Success | Device_requested_not_connected) -> ()
+    | Result (Success | Device_requested_not_connected) -> Lwt.return ()
     | Event Attached { serial_number = s; connection_speed = _; connection_type = _;
                        product_id = _; location_id = _; device_id = d; } ->
-      (match conn_table with None -> () | Some t -> Hashtbl.add t d s);
-      if show_connections
-      then Printf.sprintf "Device %d with serial number: %s connected" d s
-           |> print_endline
+      (if show_connections
+      then Lwt_io.printlf "Device %d with serial number: %s connected" d s
+      else Lwt.return ()) >>= fun () ->
+      begin match conn_table with
+        | None -> Lwt.return ()
+        | Some t ->
+          Lwt_mutex.with_lock table_lock (fun () -> Hashtbl.add t d s |> Lwt.return)
+      end
     | Event Detached d ->
-      (match conn_table with None -> () | Some t -> Hashtbl.remove t d);
-      if show_connections
-      then Printf.sprintf "Device %d disconnected" d |> print_endline
-    | _ -> ()
+      (if show_connections
+       then Lwt_io.printlf "Device %d disconnected" d
+       else Lwt.return ()) >>= fun () ->
+      begin match conn_table with
+        | None -> Lwt.return ()
+        | Some t ->
+          Lwt_mutex.with_lock table_lock (fun () -> Hashtbl.remove t d |> Lwt.return)
+      end
+    | _ -> Lwt.return ()
 
   let create_listener ?conn_table debug show_connections () =
     let total_len = (String.length listen_message) + header_length in
@@ -130,19 +141,19 @@ module Protocol = struct
 
       let buffer = Bytes.create (msg_len - header_length) in
 
-      Lwt_io.read_into_exactly ic buffer 0 (msg_len - 16) >>= fun () ->
-
-      (* We know how long the message length ought to be, so let's just read that much *)
       let rec forever () =
         read_header ic >>= fun (msg_len, _, _, _) ->
         let buffer = Bytes.create (msg_len - header_length) in
         Lwt_io.read_into_exactly ic buffer 0 (msg_len - header_length) >>= fun () ->
         parse_reply buffer () >>= fun reply ->
         if debug
-        then handle_reply reply >|= handle ?conn_table show_connections reply >>= forever
-        else handle show_connections reply () |> Lwt.return >>= forever
+        then handle_reply reply >>= handle ?conn_table show_connections reply >>= forever
+        else handle show_connections reply () >>= forever
       in
-      forever ()
+
+      (* We know how long the message length ought to be, so let's just read that much *)
+      Lwt_io.read_into_exactly ic buffer 0 (msg_len - 16) >>= forever
+
     end
 
 end
