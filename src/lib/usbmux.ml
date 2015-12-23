@@ -215,9 +215,12 @@ module Relay = struct
     fst (Lwt.wait ())
 
   let begin_relay ~device_map ~max_retries do_daemonize =
+    (* Ask for larger internal buffers for Lwt_io function rather than
+       the default of 4096 *)
+    Lwt_io.set_default_buffer_size 32768;
+    (* Broken SSH pipes shouldn't exit our program *)
+    Sys.(signal sigpipe Signal_ignore) |> ignore;
     with_retries ~max_retries begin fun () ->
-      (* Increase Lwt_io's internal buffer from 4096 to 32768 *)
-      Lwt_io.set_default_buffer_size 32768;
       load_mappings device_map >>= fun device_mapping ->
       let devices = Hashtbl.create 12 in
       try%lwt
