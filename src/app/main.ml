@@ -18,22 +18,29 @@ let do_daemonize =
 
 let retry_count =
   let open Arg in
-  let doc = "How many times to retry tunneling connections in \
-             case they fail, defaults to 3"
-  in
-  value & opt (some int) None & info ["t"; "tries"] ~doc
+  let doc = "How many times to retry action" in
+  value & opt int 3 & info ["t"; "tries"] ~doc
 
 let begin_program
     debug
     port_pairs
     do_daemonize
-    retry_count =
+    max_retries =
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
+  let module P = Usbmux.Protocol in
   match port_pairs with
-  | None -> Usbmux.Protocol.create_listener debug true ()
-  | Some file -> Usbmux.Relay.begin_relay debug file retry_count do_daemonize
+  | None ->
+    let open P in
+    Usbmux.Protocol.create_listener ~max_retries ~event_cb:begin function
+      | P.Event P.Attached { serial_number = s; connection_speed = _; connection_type = _;
+                             product_id = _; location_id = _; device_id = d; } ->
+        Lwt_io.printlf "Device %d with serial number: %s connected" d s
+      | P.Event P.Detached d -> Lwt_io.printlf "Device %d disconnected" d
+      | _ -> Lwt.return ()
+    end
+  | Some device_map -> Usbmux.Relay.begin_relay ~device_map ~max_retries do_daemonize
 
 let entry_point =
   Term.(pure
@@ -59,6 +66,6 @@ let top_level_info =
 
 let () =
   match Term.eval (entry_point, top_level_info) with
-  | `Ok program -> Lwt_main.run program |> ignore
+  | `Ok program -> Lwt_main.run program
   | `Error _ -> prerr_endline "Something errored"
   | _ -> ()
