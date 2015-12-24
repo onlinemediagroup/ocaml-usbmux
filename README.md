@@ -1,5 +1,5 @@
 This is a library and command line tool to control port forwarding to
-iOS devices.
+jailbroken iOS devices.
 
 Basically, it lets you do:
 
@@ -8,6 +8,11 @@ $ ssh root@localhost -p 2000
 ```
 
 and you get a shell to a iDevice connected over a USB wire.
+
+`gandalf` requires that `usbmuxd` be running. If on OS X then you
+don't have to do anything, if on Linux then you need to have the open
+source version of [usbmuxd](https://github.com/libimobiledevice/usbmuxd). I recommend compiling from source, versions
+on most package managers are old.
 
 # Installation
 
