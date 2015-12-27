@@ -1,4 +1,3 @@
-
 open Lwt.Infix
 module T = ANSITerminal
 module B = Yojson.Basic
@@ -187,27 +186,27 @@ module Relay = struct
           (* Hard coded to assume ssh at the moment *)
           let msg = Protocol.connect_message ~device_id ~device_port:22 in
           let open Protocol in
-            write_header ~total_len:(msg_length msg) mux_oc >>
-            Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
-            (* Read the reply, should be good to start just raw piping *)
-            read_header mux_ic >>= fun (msg_len, _, _, _) ->
-            let buffer = Bytes.create (msg_len - header_length) in
-            Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - 16) >>
-            match parse_reply buffer with
-            | Result Success ->
-              (Printf.sprintf "Tunneling. Udid: %s Port: %d \
-                               Device_id: %d" udid port device_id)
-              |> log_info_sucess >>
-              echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
-            | Result Device_requested_not_connected ->
-              (Printf.sprintf "Tunneling: Device requested was not connected. \
-                               Udid: %s Device_id: %d" udid device_id)
-              |> log_info_bad
-            | Result Port_requested_not_available ->
-              (Printf.sprintf "Tunneling. Port requested wasn't available. \
-                               Udid: %s Port: %d Device_id: %d" udid port device_id)
-              |> log_info_bad
-            | _ -> Lwt.return_unit
+          write_header ~total_len:(msg_length msg) mux_oc >>
+          Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
+          (* Read the reply, should be good to start just raw piping *)
+          read_header mux_ic >>= fun (msg_len, _, _, _) ->
+          let buffer = Bytes.create (msg_len - header_length) in
+          Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - 16) >>
+          match parse_reply buffer with
+          | Result Success ->
+            (Printf.sprintf "Tunneling. Udid: %s Port: %d \
+                             Device_id: %d" udid port device_id)
+            |> log_info_sucess >>
+            echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
+          | Result Device_requested_not_connected ->
+            (Printf.sprintf "Tunneling: Device requested was not connected. \
+                             Udid: %s Device_id: %d" udid device_id)
+            |> log_info_bad
+          | Result Port_requested_not_available ->
+            (Printf.sprintf "Tunneling. Port requested wasn't available. \
+                             Udid: %s Port: %d Device_id: %d" udid port device_id)
+            |> log_info_bad
+          | _ -> Lwt.return_unit
         end
         |> Lwt.ignore_result
       end
@@ -230,8 +229,9 @@ module Relay = struct
         let open Protocol in
         Lwt.pick [Lwt_unix.timeout 1.0;
                   create_listener ~max_retries ~event_cb:begin function
-                    | Event Attached { serial_number = s; connection_speed = _; connection_type = _;
-                                       product_id = _; location_id = _; device_id = d; } ->
+                    | Event Attached { serial_number = s; connection_speed = _;
+                                       connection_type = _; product_id = _;
+                                       location_id = _; device_id = d; } ->
                       Hashtbl.add devices d s |> Lwt.return
                     | Event Detached d ->
                       Hashtbl.remove devices d |> Lwt.return
