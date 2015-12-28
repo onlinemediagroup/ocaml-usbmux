@@ -163,7 +163,11 @@ module Relay = struct
 
   let running_relays : unit Lwt.t list ref = ref []
 
+  let running_servers = ref []
+
   let pid_file = "/var/run/gandalf.pid"
+
+  let mapping_file = ref ""
 
   let echo ic oc = Lwt_io.(write_chars oc (read_chars ic))
 
@@ -185,7 +189,7 @@ module Relay = struct
 
   let do_tunnel (port, device_id, udid) =
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
-    let _ = Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
+    let server = Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
         Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
           (* Hard coded to assume ssh at the moment *)
           let msg = Protocol.connect_message ~device_id ~device_port:22 in
@@ -218,6 +222,8 @@ module Relay = struct
     let this_thread = fst (Lwt.task ()) in
     (* Register the thread *)
     running_relays := this_thread :: !running_relays;
+    (* Register the server *)
+    running_servers := server :: !running_servers;
     this_thread
 
   let create_pid_file () =
@@ -239,9 +245,6 @@ module Relay = struct
     let open_pid_file = open_in pid_file in
     let target_pid = input_line open_pid_file |> int_of_string in
     close_in open_pid_file;
-    (* Could throw exception on Unix.ESRCH, aka that process id
-       doesn't exist, not handling because that would be really
-       weird *)
     try
       Unix.kill target_pid Sys.sigusr1;
       exit 0
@@ -251,6 +254,8 @@ module Relay = struct
         (Printf.sprintf "Couldn't reload mapping, must have correct permissions")
       |> prerr_endline;
       exit 3
+    | Unix.Unix_error(Unix.ESRCH, _, _) ->
+      error_with_color "Are you sure relay was running already?" |> prerr_endline; exit 5
 
   let () =
     (* Since we spin up the TCP server + echo threads with Lwt.async,
@@ -271,18 +276,34 @@ module Relay = struct
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
 
+    (* Set the mapping file, need to hold this path so that when we
+       reload, we know where to reload from *)
+    mapping_file :=
+      if Filename.is_relative device_map
+      then Sys.getcwd () ^ "/" ^ device_map
+      else device_map;
+
     (* Broken SSH pipes shouldn't exit our program *)
     Sys.(signal sigpipe Signal_ignore) |> ignore;
 
     (* Stop the running threads, call begin_relay again *)
     Sys.(signal sigusr1 (Signal_handle begin fun _ ->
+        (* Kill the servers first *)
+        !running_servers |> List.iter Lwt_io.shutdown_server;
+        Lwt_log.ign_info "Completed shutting down servers";
+        (* Now cancel the threads *)
         !running_relays |> List.iter Lwt.cancel;
-        (* begin_relay ~device_map ~max_retries:(max_retries - 1) false |> Lwt.ignore_result *)
+        (* Let go of the used up servers, relays *)
+        running_servers := [];
+        running_relays := [];
+        Lwt_log.ign_info "Cancelled existing thread connections from mapping file";
+        begin_relay ~device_map:!mapping_file ~max_retries false |> Lwt.ignore_result
       end))
     |> ignore;
 
     with_retries ~max_retries begin fun () ->
-      load_mappings device_map >>= fun device_mapping ->
+      prerr_endline !mapping_file;
+      load_mappings !mapping_file >>= fun device_mapping ->
       let devices = Hashtbl.create 12 in
       try%lwt
         (* We do this because usbmuxd itself assigns device IDs and we

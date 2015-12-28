@@ -9,7 +9,7 @@ let forward_connection_file =
   let doc = "Simple file mapping udid to ports, expecting a file \
              like 123gfdgefrgt234:2000"
   in
-  value & opt (some file) None & info ["m"; "mappings"] ~doc
+  value & opt (some non_dir_file) None & info ["m"; "mappings"] ~doc
 
 let do_daemonize =
   let open Arg in
@@ -23,7 +23,9 @@ let retry_count =
 
 let reload_mapping =
   let open Arg in
-  let doc = "Stop running threads and reload the mappings" in
+  let doc = "Stop running threads and reload the mappings \
+             from the original mapping file path."
+  in
   value & flag & info ["r";"reload"] ~doc
 
 let begin_program
@@ -43,8 +45,9 @@ let begin_program
   | None ->
     let open P in
     Usbmux.Protocol.create_listener ~max_retries ~event_cb:begin function
-      | P.Event P.Attached { serial_number = s; connection_speed = _; connection_type = _;
-                             product_id = _; location_id = _; device_id = d; } ->
+      | P.Event P.Attached { serial_number = s; connection_speed = _;
+                             connection_type = _; product_id = _; location_id = _;
+                             device_id = d; } ->
         Lwt_io.printlf "Device %d with serial number: %s connected" d s
       | P.Event P.Detached d -> Lwt_io.printlf "Device %d disconnected" d
       | _ -> Lwt.return ()
