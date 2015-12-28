@@ -43,6 +43,7 @@ let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog 
              | Unix_error (_, name, _) ->
                log_info_bad (Printf.sprintf "Attempt %d, %s failed" (current_count + 1) name) >>
                Lwt_unix.sleep wait_between_failure >>= do_start (current_count + 1)
+             | Lwt.Canceled -> Lwt.return_unit
              | exn ->
                log_info_bad ~exn (Printf.sprintf "Attempt %d" (current_count + 1)) >>
                Lwt_unix.sleep wait_between_failure >>= do_start (current_count + 1)
@@ -270,6 +271,10 @@ module Relay = struct
        case we do nothing *)
     Lwt.async_exception_hook := function
       | Lwt.Canceled -> ()
+      | Unix.Unix_error(Unix.EADDRINUSE, _, _) ->
+        error_with_color "Check if already running tunneling relay, probably are"
+        |> prerr_endline;
+        exit 6
       | e ->
         error_with_color
           (Printf.sprintf "Unhandled async exception: %s" (Printexc.to_string e))
@@ -335,7 +340,7 @@ module Relay = struct
         fst (Lwt.wait ())
     end
   (* Mutually recursive function, handle_signals needs name of
-     begin_relay and begin_relay needs handle signals *)
+     begin_relay and begin_relay needs handle_signals *)
   and handle_signals max_retries =
     (* Broken SSH pipes shouldn't exit our program *)
     Sys.(signal sigpipe Signal_ignore) |> ignore;
