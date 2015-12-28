@@ -161,6 +161,8 @@ end
 
 module Relay = struct
 
+  (* let running_relays = ref [] *)
+
   let echo ic oc = Lwt_io.(write_chars oc (read_chars ic))
 
   let load_mappings file_name =
@@ -191,7 +193,7 @@ module Relay = struct
           (* Read the reply, should be good to start just raw piping *)
           read_header mux_ic >>= fun (msg_len, _, _, _) ->
           let buffer = Bytes.create (msg_len - header_length) in
-          Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - 16) >>
+          Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
           match parse_reply buffer with
           | Result Success ->
             (Printf.sprintf "Tunneling. Udid: %s Port: %d \
@@ -211,14 +213,21 @@ module Relay = struct
         |> Lwt.ignore_result
       end
     in
-    fst (Lwt.wait ())
+    (* Need to register this task first *)
+    fst (Lwt.task ())
 
-  let begin_relay ~device_map ~max_retries do_daemonize =
+  let rec begin_relay ~device_map ~max_retries do_daemonize =
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
     (* Broken SSH pipes shouldn't exit our program *)
     Sys.(signal sigpipe Signal_ignore) |> ignore;
+
+    (* Stop the running threads, call begin_relay again *)
+    Sys.(signal sigusr1 (Signal_handle begin fun _ ->
+
+        ()
+      end)) |> ignore;
     with_retries ~max_retries begin fun () ->
       load_mappings device_map >>= fun device_mapping ->
       let devices = Hashtbl.create 12 in
@@ -240,19 +249,21 @@ module Relay = struct
       with
         Lwt_unix.Timeout ->
         if do_daemonize then Lwt_daemon.daemonize ~syslog:true ();
-        Hashtbl.fold begin fun device_id_key udid_value accum ->
-          try
-            (Hashtbl.find device_mapping udid_value,
-             device_id_key,
-             udid_value) :: accum
-          with
-            Not_found ->
-            Lwt_log.ign_info_f
-              "Device with udid: %s expected but wasn't connected" udid_value;
-            accum
-        end
-          devices []
-        |> Lwt_list.iter_p do_tunnel
+        Lwt.async begin fun () ->
+          Hashtbl.fold begin fun device_id_key udid_value accum ->
+            try
+              (Hashtbl.find device_mapping udid_value,
+               device_id_key,
+               udid_value) :: accum
+            with
+              Not_found ->
+              Lwt_log.ign_info_f
+                "Device with udid: %s expected but wasn't connected" udid_value;
+              accum
+          end
+            devices [] |> Lwt_list.iter_p do_tunnel
+        end;
+        fst (Lwt.wait ())
 
     end
 
