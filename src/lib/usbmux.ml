@@ -20,9 +20,9 @@ let colored_message
   let just_message = T.sprintf [T.Foreground message_color] "%s" str in
   if with_time then just_time ^ just_message else just_message
 
-let log_info_bad ?exn msg =
-  colored_message ~time_color:T.White ~message_color:T.Red msg
-  |> Lwt_log.info ?exn
+let error_with_color msg = colored_message ~time_color:T.White ~message_color:T.Red msg
+
+let log_info_bad ?exn msg = error_with_color msg |> Lwt_log.info ?exn
 
 let log_info_sucess msg =
   colored_message ~time_color:T.White ~message_color:T.Yellow msg
@@ -228,12 +228,9 @@ module Relay = struct
         write open_pid_file current_pid 0 (String.length current_pid) |> ignore;
         close open_pid_file
       with Unix_error(EACCES, _, _) ->
-        colored_message
-          ~time_color:T.White
-          ~message_color:T.Red
-          (Printf.sprintf "Couldn't open pid file %s, \
-                           make sure you have right permissions"
-             pid_file)
+        error_with_color (Printf.sprintf "Couldn't open pid file %s, \
+                                          make sure you have right permissions"
+                            pid_file)
         |> prerr_endline;
         exit 2;
     )
@@ -243,30 +240,47 @@ module Relay = struct
     let target_pid = input_line open_pid_file |> int_of_string in
     close_in open_pid_file;
     (* Could throw exception on Unix.ESRCH, aka that process id
-       doesn't exist *)
+       doesn't exist, not handling because that would be really
+       weird *)
     try
       Unix.kill target_pid Sys.sigusr1;
       exit 0
     with
       Unix.Unix_error(Unix.EPERM, _, _) ->
-        colored_message
-          ~time_color:T.White
-          ~message_color:T.Red
-          (Printf.sprintf "Couldn't reload mapping, must have correct permissions")
+      error_with_color
+        (Printf.sprintf "Couldn't reload mapping, must have correct permissions")
+      |> prerr_endline;
+      exit 3
+
+  let () =
+    (* Since we spin up the TCP server + echo threads with Lwt.async,
+       then any exceptions that they would raise are gonna come this
+       way. Since we are making the TCP server + echo threads of type
+       cancellable, their exception is the Lwt.Canceled hook, in which
+       case we do nothing *)
+    Lwt.async_exception_hook := function
+      | Lwt.Canceled -> ()
+      | e ->
+        error_with_color
+          (Printf.sprintf "Unhandled async exception: %s" (Printexc.to_string e))
         |> prerr_endline;
-        exit 3
+        exit 4
 
   let rec begin_relay ~device_map ~max_retries do_daemonize =
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
+
     (* Broken SSH pipes shouldn't exit our program *)
     Sys.(signal sigpipe Signal_ignore) |> ignore;
 
     (* Stop the running threads, call begin_relay again *)
     Sys.(signal sigusr1 (Signal_handle begin fun _ ->
-        ()
-      end)) |> ignore;
+        !running_relays |> List.iter Lwt.cancel;
+        (* begin_relay ~device_map ~max_retries:(max_retries - 1) false |> Lwt.ignore_result *)
+      end))
+    |> ignore;
+
     with_retries ~max_retries begin fun () ->
       load_mappings device_map >>= fun device_mapping ->
       let devices = Hashtbl.create 12 in
