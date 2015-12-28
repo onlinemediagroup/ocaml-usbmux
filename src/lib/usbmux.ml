@@ -316,8 +316,8 @@ module Relay = struct
       with
         Lwt_unix.Timeout ->
         if do_daemonize then begin
-          Lwt_daemon.daemonize ~syslog:true ();
-          create_pid_file ()
+          create_pid_file ();
+          Lwt_daemon.daemonize ~syslog:true ()
         end;
 
         Lwt.async begin fun () ->
