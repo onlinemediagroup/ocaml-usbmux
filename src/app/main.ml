@@ -35,7 +35,6 @@ let begin_program
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
-  if do_daemonize then Usbmux.Relay.create_pid_file ();
   if do_reload_mapping then Usbmux.Relay.reload_mapping ();
 
   let module P = Usbmux.Protocol in

@@ -229,6 +229,7 @@ module Relay = struct
         close open_pid_file
       with Unix_error(EACCES, _, _) ->
         colored_message
+          ~time_color:T.White
           ~message_color:T.Red
           (Printf.sprintf "Couldn't open pid file %s, \
                            make sure you have right permissions"
@@ -238,9 +239,22 @@ module Relay = struct
     )
 
   let reload_mapping () =
-    ()
-    (* Need a pid file *)
-    (* Unix.kill *)
+    let open_pid_file = open_in pid_file in
+    let target_pid = input_line open_pid_file |> int_of_string in
+    close_in open_pid_file;
+    (* Could throw exception on Unix.ESRCH, aka that process id
+       doesn't exist *)
+    try
+      Unix.kill target_pid Sys.sigusr1;
+      exit 0
+    with
+      Unix.Unix_error(Unix.EPERM, _, _) ->
+        colored_message
+          ~time_color:T.White
+          ~message_color:T.Red
+          (Printf.sprintf "Couldn't reload mapping, must have correct permissions")
+        |> prerr_endline;
+        exit 3
 
   let rec begin_relay ~device_map ~max_retries do_daemonize =
     (* Ask for larger internal buffers for Lwt_io function rather than
@@ -273,7 +287,11 @@ module Relay = struct
                   end]
       with
         Lwt_unix.Timeout ->
-        if do_daemonize then Lwt_daemon.daemonize ~syslog:true ();
+        if do_daemonize then begin
+          Lwt_daemon.daemonize ~syslog:true ();
+          create_pid_file ()
+        end;
+
         Lwt.async begin fun () ->
           Hashtbl.fold begin fun device_id_key udid_value accum ->
             try
