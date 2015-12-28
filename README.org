@@ -15,12 +15,13 @@ Basically, it lets you do:
 $ ssh root@localhost -p 2000
 #+END_SRC
 
-and you get a shell to a iDevice connected over a USB wire.
+and you get a shell to an iDevice connected over a USB wire.
 
-~gandalf~ requires that ~usbmuxd~ be running. If on OS X then you
-don't have to do anything, if on Linux then you need to have the open
-source version of [[https://github.com/libimobiledevice/usbmuxd][usbmuxd]]. I recommend compiling from source, versions
-on most package managers are old.
+The command line tool is called ~gandalf~ and it requires that
+~usbmuxd~ be running. If on OS X then you don't have to do anything,
+if on Linux then you need to have the open source version of
+[[https://github.com/libimobiledevice/usbmuxd][usbmuxd]]. I recommend compiling from source, versions on most package
+managers are old.
 
 * Installation
 In this cloned repository, do: 
@@ -56,6 +57,16 @@ hashmarks are comments.
 
 you can also daemonize ~gandalf~ with the ~-d~ flag.
 
+After daemonizing, you might want to reload the mapping file. You can
+do this by first editing the original file and then just calling
+gandalf with:
+
+*NOTE*:You might need to end up doing this under sudo as ~gandalf~
+ needs to made a pid file under ~/var/run~.
+
+#+BEGIN_SRC shell
+$ gandalf -r
+#+END_SRC
 
 ~gandalf~ can be louder about what's happening behind the scenes by
 invoking it with the ~-v~, ~--verbose~ flag.

@@ -1,6 +1,6 @@
 .\" Pipe this output to groff -man -Tutf8 | less
 .\"
-.TH "GANDALF" 1 "" "Gandalf 0.1" "Gandalf Manual"
+.TH "GANDALF" 1 "" "Gandalf 0.2" "Gandalf Manual"
 .\" Disable hyphenation and ragged-right
 .nh
 .ad l
@@ -23,6 +23,9 @@ Show this help in format \fIFMT\fR (pager, plain or groff).
 .TP 4
 \fB\-m\fR \fIVAL\fR, \fB\-\-mappings\fR=\fIVAL\fR
 Simple file mapping udid to ports, expecting a file like 123gfdgefrgt234:2000
+.TP 4
+\fB\-r\fR, \fB\-\-reload\fR
+Stop running threads and reload the mappings from the original mapping file path.
 .TP 4
 \fB\-t\fR \fIVAL\fR, \fB\-\-tries\fR=\fIVAL\fR (absent=3)
 How many times to retry action
