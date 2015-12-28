@@ -161,7 +161,9 @@ end
 
 module Relay = struct
 
-  (* let running_relays = ref [] *)
+  let running_relays : unit Lwt.t list ref = ref []
+
+  let pid_file = "/var/run/gandalf.pid"
 
   let echo ic oc = Lwt_io.(write_chars oc (read_chars ic))
 
@@ -213,8 +215,32 @@ module Relay = struct
         |> Lwt.ignore_result
       end
     in
-    (* Need to register this task first *)
-    fst (Lwt.task ())
+    let this_thread = fst (Lwt.task ()) in
+    (* Register the thread *)
+    running_relays := this_thread :: !running_relays;
+    this_thread
+
+  let create_pid_file () =
+    Unix.(
+      try
+        let open_pid_file = openfile pid_file [O_RDWR; O_CREAT; O_CLOEXEC] 0o666 in
+        let current_pid = getpid () |> string_of_int in
+        write open_pid_file current_pid 0 (String.length current_pid) |> ignore;
+        close open_pid_file
+      with Unix_error(EACCES, _, _) ->
+        colored_message
+          ~message_color:T.Red
+          (Printf.sprintf "Couldn't open pid file %s, \
+                           make sure you have right permissions"
+             pid_file)
+        |> prerr_endline;
+        exit 2;
+    )
+
+  let reload_mapping () =
+    ()
+    (* Need a pid file *)
+    (* Unix.kill *)
 
   let rec begin_relay ~device_map ~max_retries do_daemonize =
     (* Ask for larger internal buffers for Lwt_io function rather than
@@ -225,7 +251,6 @@ module Relay = struct
 
     (* Stop the running threads, call begin_relay again *)
     Sys.(signal sigusr1 (Signal_handle begin fun _ ->
-
         ()
       end)) |> ignore;
     with_retries ~max_retries begin fun () ->
@@ -261,7 +286,7 @@ module Relay = struct
                 "Device with udid: %s expected but wasn't connected" udid_value;
               accum
           end
-            devices [] |> Lwt_list.iter_p do_tunnel
+            devices [] |> Lwt_list.iter_s do_tunnel
         end;
         fst (Lwt.wait ())
 

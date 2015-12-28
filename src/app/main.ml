@@ -21,15 +21,25 @@ let retry_count =
   let doc = "How many times to retry action" in
   value & opt int 3 & info ["t"; "tries"] ~doc
 
+let reload_mapping =
+  let open Arg in
+  let doc = "Stop running threads and reload the mappings" in
+  value & flag & info ["r";"reload"] ~doc
+
 let begin_program
     debug
     port_pairs
     do_daemonize
-    max_retries =
+    max_retries
+    do_reload_mapping =
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
+  if do_daemonize then Usbmux.Relay.create_pid_file ();
+  if do_reload_mapping then Usbmux.Relay.reload_mapping ();
+
   let module P = Usbmux.Protocol in
+  (* Now we start spinning up Lwt *)
   match port_pairs with
   | None ->
     let open P in
@@ -48,7 +58,8 @@ let entry_point =
         $ be_verbose
         $ forward_connection_file
         $ do_daemonize
-        $ retry_count)
+        $ retry_count
+        $ reload_mapping)
 
 let top_level_info =
   let doc = "Control TCP forwarding for sshing iDevices" in
@@ -62,10 +73,10 @@ let top_level_info =
              `S "AUTHOR";
              `P "Edgar Aroutiounian"]
   in
-  Term.info "gandalf" ~version:"0.1" ~doc ~man
+  Term.info "gandalf" ~version:"0.2" ~doc ~man
 
 let () =
   match Term.eval (entry_point, top_level_info) with
   | `Ok program -> Lwt_main.run program
-  | `Error _ -> prerr_endline "Something errored"
+  | `Error _ -> prerr_endline "Unhandled error"
   | _ -> ()
