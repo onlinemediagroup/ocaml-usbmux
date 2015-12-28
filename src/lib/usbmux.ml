@@ -332,10 +332,7 @@ module Relay = struct
                 "Device with udid: %s expected but wasn't connected" udid_value;
               accum
           end
-            (* Serially spawn off the threads so that we don't have to
-               have a Mutex for the registration lists of threads and
-               servers *)
-            devices [] |> Lwt_list.iter_s do_tunnel
+            devices [] |> Lwt_list.iter_p do_tunnel
         end;
         fst (Lwt.wait ())
     end
