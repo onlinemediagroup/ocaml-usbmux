@@ -241,6 +241,10 @@ module Relay = struct
         exit 2;
     )
 
+  (* We reload the mapping by sending a user defined signal to the
+     current running daemon which will then cancel the running
+     threads, ie the servers and connections, and reload from the
+     original given mapping file *)
   let reload_mapping () =
     let open_pid_file = open_in pid_file in
     let target_pid = input_line open_pid_file |> int_of_string in
@@ -255,7 +259,8 @@ module Relay = struct
       |> prerr_endline;
       exit 3
     | Unix.Unix_error(Unix.ESRCH, _, _) ->
-      error_with_color "Are you sure relay was running already?" |> prerr_endline; exit 5
+      error_with_color "Are you sure relay was running already?" |> prerr_endline;
+      exit 5
 
   let () =
     (* Since we spin up the TCP server + echo threads with Lwt.async,
@@ -283,26 +288,9 @@ module Relay = struct
       then Sys.getcwd () ^ "/" ^ device_map
       else device_map;
 
-    (* Broken SSH pipes shouldn't exit our program *)
-    Sys.(signal sigpipe Signal_ignore) |> ignore;
-
-    (* Stop the running threads, call begin_relay again *)
-    Sys.(signal sigusr1 (Signal_handle begin fun _ ->
-        (* Kill the servers first *)
-        !running_servers |> List.iter Lwt_io.shutdown_server;
-        Lwt_log.ign_info "Completed shutting down servers";
-        (* Now cancel the threads *)
-        !running_relays |> List.iter Lwt.cancel;
-        (* Let go of the used up servers, relays *)
-        running_servers := [];
-        running_relays := [];
-        Lwt_log.ign_info "Cancelled existing thread connections from mapping file";
-        begin_relay ~device_map:!mapping_file ~max_retries false |> Lwt.ignore_result
-      end))
-    |> ignore;
+    handle_signals max_retries;
 
     with_retries ~max_retries begin fun () ->
-      prerr_endline !mapping_file;
       load_mappings !mapping_file >>= fun device_mapping ->
       let devices = Hashtbl.create 12 in
       try%lwt
@@ -339,10 +327,35 @@ module Relay = struct
                 "Device with udid: %s expected but wasn't connected" udid_value;
               accum
           end
+            (* Serially spawn off the threads so that we don't have to
+               have a Mutex for the registration lists of threads and
+               servers *)
             devices [] |> Lwt_list.iter_s do_tunnel
         end;
         fst (Lwt.wait ())
-
     end
+  (* Mutually recursive function, handle_signals needs name of
+     begin_relay and begin_relay needs handle signals *)
+  and handle_signals max_retries =
+    (* Broken SSH pipes shouldn't exit our program *)
+    Sys.(signal sigpipe Signal_ignore) |> ignore;
+    (* Stop the running threads, call begin_relay again *)
+    Sys.(signal sigusr1 (Signal_handle begin fun _ ->
+        (* Kill the servers first *)
+        !running_servers |> List.iter Lwt_io.shutdown_server;
+        Lwt_log.ign_info_f
+          "Completed shutting down %d servers" (List.length !running_servers);
+        (* Now cancel the threads *)
+        !running_relays |> List.iter Lwt.cancel;
+        Lwt_log.ign_info_f
+          "Cancelled %d existing thread connections from mapping file"
+          (List.length !running_relays);
+        (* Let go of the used up servers, relays *)
+        running_servers := [];
+        running_relays := [];
+        (* Spin it up again *)
+        begin_relay ~device_map:!mapping_file ~max_retries false |> Lwt.ignore_result
+      end))
+    |> ignore
 
 end
