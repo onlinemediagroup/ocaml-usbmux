@@ -52,10 +52,8 @@ let show_status () =
          ("\tssh root@localhost -p <some_port>" |> colorize ~message_color:Usbmux.T.Cyan)
       )
       |> Lwt_io.printl >>= fun () ->
-      (* "Currently Tunneled Devices" *)
-      (* |> Usbmux.colored_message ~with_time:false |> Lwt_io.printl >>= fun () -> *)
       Yojson.Basic.(from_string s |> pretty_to_string) |> Lwt_io.printl)
-     |> Lwt_main.run |> ignore;
+     |> Lwt_main.run |> ignore
    with
      Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
      Usbmux.error_with_color "Couldn't get status, check if relay is running"
@@ -120,7 +118,8 @@ let top_level_info =
              `Pre "$(b, $(tname)) -m mapping_file";
              `P "2.1) Daemonize $(b, $(tname)) with the -d flag. *NOTE*: You \
                  might need to end up doing that under sudo as $(b, $(tname)) needs to \
-                 make a pid file under /var/run.";
+                 make a pid file under /var/run. If daemonizing is failing, try running \
+                 as root. After daemonzing, check the system log for debugging info";
              `P "3) See a pretty JSON representation of devices and their ports that \
                  are currently connected.";
              `Pre "$(b, $(tname)) -s";

@@ -18,6 +18,9 @@ gandalf \- Control TCP forwarding for iDevices
 \fB\-d\fR, \fB\-\-daemonize\fR
 Whether\fB gandalf\fR should run as a daemon
 .TP 4
+\fB\-e\fR, \fB\-\-exit\fR
+Gracefully exit current running relay
+.TP 4
 \fB\-\-help\fR[=\fIFMT\fR] (default=pager)
 Show this help in format \fIFMT\fR (pager, plain or groff).
 .TP 4
@@ -52,7 +55,7 @@ Show version information.
 \fB gandalf\fR \-m mapping_file
 .fi
 .P
-2.1) Daemonize \fB gandalf\fR with the \-d flag. *NOTE*: Youmight need to end up doing that under sudo as ~gandalf~ needs tomake a pid file under /var/run.
+2.1) Daemonize \fB gandalf\fR with the \-d flag. *NOTE*: You might need to end up doing that under sudo as \fB gandalf\fR needs to make a pid file under /var/run.
 .P
 3) See a pretty JSON representation of devices and their ports that are currently connected.
 .P
