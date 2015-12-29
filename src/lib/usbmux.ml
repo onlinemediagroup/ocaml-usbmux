@@ -288,6 +288,20 @@ module Relay = struct
         exit 2;
     )
 
+  let complete_shutdown () =
+    (* Kill the servers first *)
+    !running_servers |> List.iter Lwt_io.shutdown_server;
+    Lwt_log.ign_info_f
+      "Completed shutting down %d servers" (List.length !running_servers);
+    (* Now cancel the threads *)
+    !running_relays |> List.iter Lwt.cancel;
+    Lwt_log.ign_info_f
+      "Cancelled %d existing thread connections from mapping file"
+      (List.length !running_relays);
+    (* Let go of the used up servers, relays *)
+    running_servers := [];
+    running_relays := []
+
   let () =
     (* Since we spin up the TCP server + echo threads with Lwt.async,
        then any exceptions that they would raise are gonna come this
@@ -367,7 +381,8 @@ module Relay = struct
     handle_signals max_retries;
 
     platform () >>= fun plat ->
-
+    (* Needed because Linux system log doesn't like the terminal
+       coloring string but the system log on OS X does just fine *)
     current_platform := plat;
 
     with_retries ~max_retries begin fun () ->
@@ -402,31 +417,25 @@ module Relay = struct
         fst (Lwt.wait ())
     end
   (* Mutually recursive function, handle_signals needs name of
-     begin_relay and begin_relay needs handle_signals *)
+     begin_relay and begin_relay needs the name handle_signals *)
   and handle_signals max_retries =
-    (* Broken SSH pipes shouldn't exit our program *)
-    Sys.(signal sigpipe Signal_ignore) |> ignore;
-    (* Stop the running threads, call begin_relay again *)
-    Sys.(signal sigusr1 (Signal_handle begin fun _ ->
-        (* Kill the servers first *)
-        !running_servers |> List.iter Lwt_io.shutdown_server;
-        Lwt_log.ign_info_f
-          "Completed shutting down %d servers" (List.length !running_servers);
-        (* Now cancel the threads *)
-        !running_relays |> List.iter Lwt.cancel;
-        Lwt_log.ign_info_f
-          "Cancelled %d existing thread connections from mapping file"
-          (List.length !running_relays);
-        (* Let go of the used up servers, relays *)
-        running_servers := [];
-        running_relays := [];
-        (* Spin it up again *)
-        begin_relay ~device_map:!mapping_file ~max_retries false |> Lwt.ignore_result
-      end))
-    |> ignore;
-    Sys.(signal sigusr2 (Signal_handle begin fun _ ->
-        print_endline "Got siguser 2, guess you tried to cancel"
-      end))
-    |> ignore;
+    [ (* Broken SSH pipes shouldn't exit our program *)
+      Sys.(signal sigpipe Signal_ignore);
+      (* Stop the running threads, call begin_relay again *)
+      Sys.(signal sigusr1 (Signal_handle begin fun _ ->
+          complete_shutdown ();
+          log_info_success "Restarting relay with reloaded mappings" |> Lwt.ignore_result;
+          (* Spin it up again *)
+          begin_relay ~device_map:!mapping_file ~max_retries false |> Lwt.ignore_result
+        end));
+      (* Shutdown the servers, relays then exit *)
+      Sys.(signal sigusr2 (Signal_handle begin fun _ ->
+          let relay_count = List.length !running_servers in
+          complete_shutdown ();
+          log_info_success (Printf.sprintf "Shutdown %d relays, exiting now" relay_count)
+          |> Lwt.ignore_result;
+          exit 0;
+        end))
+    ] |> List.iter ignore
 
 end
