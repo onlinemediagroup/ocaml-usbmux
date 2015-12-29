@@ -3,6 +3,13 @@ module T = ANSITerminal
 module B = Yojson.Basic
 module U = Yojson.Basic.Util
 
+type platform = Linux | Darwin
+
+let platform_of_string = function
+  | "Darwin" -> Darwin | _ -> Linux
+
+let current_platform = ref Linux
+
 let byte_swap_16 value =
   ((value land 0xFF) lsl 8) lor ((value lsr 8) land 0xFF)
 
@@ -22,13 +29,19 @@ let colored_message
 
 let error_with_color msg = colored_message ~time_color:T.White ~message_color:T.Red msg
 
-let log_info_bad ?exn msg = error_with_color msg |> Lwt_log.info ?exn
+let log_info_bad ?exn msg = match !current_platform with
+  | Darwin -> error_with_color msg |> Lwt_log.info ?exn
+  | Linux -> msg |> Lwt_log.info ?exn
 
-let log_info_sucess msg =
-  colored_message ~time_color:T.White ~message_color:T.Yellow msg
-  |> Lwt_log.info
+let log_info_success msg = match !current_platform with
+  | Darwin ->
+    colored_message ~time_color:T.White ~message_color:T.Yellow msg |> Lwt_log.info
+  | Linux -> msg |> Lwt_log.info
 
 let ( >> ) x y = x >>= fun () -> y
+
+let platform () =
+  Lwt_process.pread_line (Lwt_process.shell "uname") >|= platform_of_string
 
 let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog =
   assert (max_retries > 0 && max_retries < 20);
@@ -205,8 +218,7 @@ module Relay = struct
           | Result Success ->
             (Printf.sprintf "Tunneling. Udid: %s Port: %d \
                              Device_id: %d" udid port device_id)
-            |> log_info_sucess >>
-            echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
+            |> log_info_success >> echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
           | Result Device_requested_not_connected ->
             (Printf.sprintf "Tunneling: Device requested was not connected. \
                              Udid: %s Device_id: %d" udid device_id)
@@ -260,7 +272,10 @@ module Relay = struct
       |> prerr_endline;
       exit 3
     | Unix.Unix_error(Unix.ESRCH, _, _) ->
-      error_with_color "Are you sure relay was running already?" |> prerr_endline;
+      error_with_color
+        (Printf.sprintf "Are you sure relay was running already? \
+                         Pid in %s did not match running relay " pid_file)
+      |> prerr_endline;
       exit 5
 
   let () =
@@ -293,7 +308,13 @@ module Relay = struct
       then Sys.getcwd () ^ "/" ^ device_map
       else device_map;
 
+    (* Setup the signal handlers, needed so that we know when to
+       reload *)
     handle_signals max_retries;
+
+    platform () >>= fun plat ->
+
+    current_platform := plat;
 
     with_retries ~max_retries begin fun () ->
       load_mappings !mapping_file >>= fun device_mapping ->
@@ -316,8 +337,8 @@ module Relay = struct
       with
         Lwt_unix.Timeout ->
         if do_daemonize then begin
-          create_pid_file ();
-          Lwt_daemon.daemonize ~syslog:true ()
+          Lwt_daemon.daemonize ~syslog:true ();
+          create_pid_file ()
         end;
 
         Lwt.async begin fun () ->
