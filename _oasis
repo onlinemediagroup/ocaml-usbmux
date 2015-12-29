@@ -22,7 +22,9 @@ Library usbmux
   install: true
   CompiledObject: native
   BuildDepends:
-    lwt.unix, lwt.ppx, plist, yojson, ANSITerminal, stringext
+    lwt.unix, lwt.ppx, plist,
+    yojson, ANSITerminal, stringext,
+    cohttp.lwt
 
 Executable gandalf
   Path: src/app

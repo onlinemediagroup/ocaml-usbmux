@@ -302,13 +302,20 @@ module Relay = struct
       Lwt_io.establish_server stat_addr begin fun (reply, response) ->
         (Lwt_io.read_line reply >>= function
             "GET / HTTP/1.1" ->
-            let as_json : B.json = `List (devs |> List.map begin fun (port, device_id, udid) ->
+            let as_json = (`List (devs |> List.map begin fun (port, device_id, udid) ->
                 (`Assoc [("Port", `Int port);
                          ("DeviceID", `Int device_id);
                          ("UDID", `String udid)] : B.json)
-              end)
+              end)) |> B.to_string
             in
-            let msg = B.to_string as_json in
+            let msg = Printf.sprintf
+                "HTTP/1.1 200 OK\r\n\
+                 Connection: Closed\r\n\
+                 Content-Length:%d\r\n\r\n\
+                 %s"
+                (String.length as_json)
+                as_json
+            in
             Lwt_io.write_from_string_exactly response msg 0 (String.length msg)
           | _ -> Lwt.return_unit)
         |> Lwt.ignore_result

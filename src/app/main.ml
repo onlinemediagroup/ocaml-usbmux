@@ -1,3 +1,4 @@
+open Lwt.Infix
 open Cmdliner
 
 let be_verbose =
@@ -28,16 +29,38 @@ let reload_mapping =
   in
   value & flag & info ["r";"reload"] ~doc
 
+let status =
+  let open Arg in
+  let doc = "Pretty print json of currently tunneled devices" in
+  value & flag & info ["s";"status"] ~doc
+
+let show_status () =
+  let open Cohttp_lwt_unix in
+  (try
+     (Client.get (Uri.of_string "http://localhost:5000") >>= fun (_, body) ->
+      Cohttp_lwt_body.to_string body >>= fun s ->
+      Lwt_io.printl (Usbmux.colored_message "Currently Tunneled Devices") >>= fun () ->
+      Yojson.Basic.(from_string s |> pretty_to_string) |> Lwt_io.printl)
+     |> Lwt_main.run |> ignore;
+   with
+     Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
+     Usbmux.error_with_color "Couldn't get status, check if relay is running"
+     |> prerr_endline);
+  exit 0
+
 let begin_program
     debug
     port_pairs
     do_daemonize
     max_retries
-    do_reload_mapping =
+    do_reload_mapping
+    do_status =
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
   if do_reload_mapping then Usbmux.Relay.reload_mapping ();
+
+  if do_status then show_status ();
 
   let module P = Usbmux.Protocol in
   (* Now we start spinning up Lwt *)
@@ -61,7 +84,8 @@ let entry_point =
         $ forward_connection_file
         $ do_daemonize
         $ retry_count
-        $ reload_mapping)
+        $ reload_mapping
+        $ status)
 
 let top_level_info =
   let doc = "Control TCP forwarding for sshing iDevices" in
