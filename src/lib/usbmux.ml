@@ -296,8 +296,23 @@ module Relay = struct
         |> prerr_endline;
         exit 4
 
-  let start_status_server devs =
+  let device_list_of_hashtable ~device_mapping ~devices =
+    Hashtbl.fold begin fun device_id_key udid_value accum ->
+      try
+        (Hashtbl.find device_mapping udid_value,
+         device_id_key,
+         udid_value) :: accum
+      with
+        Not_found ->
+        Lwt_log.ign_info_f
+          "Device with udid: %s expected but wasn't connected" udid_value;
+        accum
+    end
+      devices []
+
+  let start_status_server ~device_mapping ~devices =
     let stat_addr = Unix.(ADDR_INET(inet_addr_loopback, 5000)) in
+    let devs = device_list_of_hashtable ~device_mapping ~devices in
     let stat_server =
       Lwt_io.establish_server stat_addr begin fun (reply, response) ->
         (Lwt_io.read_line reply >>= function
@@ -352,38 +367,27 @@ module Relay = struct
         (* We do this because usbmuxd itself assigns device IDs and we
            need to begin the listen message, then find out the device IDs
            that usbmuxd has assigned per UDID, hence the timeout. *)
-        let open Protocol in
         Lwt.pick [Lwt_unix.timeout 1.0;
-                  create_listener ~max_retries ~event_cb:begin function
-                    | Event Attached { serial_number = s; connection_speed = _;
-                                       connection_type = _; product_id = _;
-                                       location_id = _; device_id = d; } ->
-                      Hashtbl.add devices d s |> Lwt.return
-                    | Event Detached d ->
-                      Hashtbl.remove devices d |> Lwt.return
-                    | _ -> Lwt.return_unit
-                  end]
+                  Protocol.(create_listener ~max_retries ~event_cb:begin function
+                      | Protocol.Event Attached { serial_number = s; connection_speed = _;
+                                                  connection_type = _; product_id = _;
+                                                  location_id = _; device_id = d; } ->
+                        Hashtbl.add devices d s |> Lwt.return
+                      | Protocol.Event Detached d ->
+                        Hashtbl.remove devices d |> Lwt.return
+                      | _ -> Lwt.return_unit
+                    end)]
       with
         Lwt_unix.Timeout ->
         if do_daemonize then begin
+          (* This order matters *)
           Lwt_daemon.daemonize ~syslog:true ();
           create_pid_file ()
         end;
         (* Asynchronously create concurrently the relay tunnels *)
         Lwt.async begin fun () ->
-          Hashtbl.fold begin fun device_id_key udid_value accum ->
-            try
-              (Hashtbl.find device_mapping udid_value,
-               device_id_key,
-               udid_value) :: accum
-            with
-              Not_found ->
-              Lwt_log.ign_info_f
-                "Device with udid: %s expected but wasn't connected" udid_value;
-              accum
-          end
-            devices [] |> fun devices ->
-          start_status_server devices <&> Lwt_list.iter_p do_tunnel devices
+          start_status_server ~device_mapping ~devices <&>
+          Lwt_list.iter_p do_tunnel (device_list_of_hashtable ~device_mapping ~devices)
         end;
         fst (Lwt.wait ())
     end
