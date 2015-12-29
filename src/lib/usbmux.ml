@@ -296,6 +296,28 @@ module Relay = struct
         |> prerr_endline;
         exit 4
 
+  let start_status_server devs =
+    let stat_addr = Unix.(ADDR_INET(inet_addr_loopback, 5000)) in
+    let stat_server =
+      Lwt_io.establish_server stat_addr begin fun (reply, response) ->
+        (Lwt_io.read_line reply >>= function
+            "GET / HTTP/1.1" ->
+            let as_json : B.json = `List (devs |> List.map begin fun (port, device_id, udid) ->
+                (`Assoc [("Port", `Int port);
+                         ("DeviceID", `Int device_id);
+                         ("UDID", `String udid)] : B.json)
+              end)
+            in
+            let msg = B.to_string as_json in
+            Lwt_io.write_from_string_exactly response msg 0 (String.length msg)
+          | _ -> Lwt.return_unit)
+        |> Lwt.ignore_result
+      end
+    in
+    (* Register this server as well *)
+    running_servers := stat_server :: !running_servers;
+    fst (Lwt.wait ())
+
   let rec begin_relay ~device_map ~max_retries do_daemonize =
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
@@ -340,7 +362,7 @@ module Relay = struct
           Lwt_daemon.daemonize ~syslog:true ();
           create_pid_file ()
         end;
-
+        (* Asynchronously create concurrently the relay tunnels *)
         Lwt.async begin fun () ->
           Hashtbl.fold begin fun device_id_key udid_value accum ->
             try
@@ -353,7 +375,8 @@ module Relay = struct
                 "Device with udid: %s expected but wasn't connected" udid_value;
               accum
           end
-            devices [] |> Lwt_list.iter_p do_tunnel
+            devices [] |> fun devices ->
+          start_status_server devices <&> Lwt_list.iter_p do_tunnel devices
         end;
         fst (Lwt.wait ())
     end
