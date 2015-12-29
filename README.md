@@ -28,42 +28,44 @@ OCaml library.
 
 # gandalf usage.
 
-You can use the command line tool just by using it on the comamnd
-line.
+The following are a series of usages of `gandalf`, all short handle
+arguments have long-forms as well and `-v` can be added at any time.
 
-```shell
-$ gandalf
-```
+1.  See with realtime updates what devices are connected 
+    
+    ```shell
+    $ gandalf
+    ```
+    
+    This will start up `gandalf` in listen mode, that is it will print
+    out whenever a device connects or disconnects.
 
-This will start up `gandalf` in listen mode, that is it will print out
-whenever a device connects or disconnects.
+2.  Start with a mapping file which is of the form `<udid>:<port>`. The
+    `#` character starts comments
+    
+    ```shell
+    $ gandalf -m mapping
+    ```
 
-Doing:
+2.1) You can also daemonize `gandalf` with the `-d` flag. **NOTE**: You
+might need to end up doing that under sudo as `gandalf` needs to
+make a pid file under `/var/run`.
 
-```shell
-$ gandalf -m mapping
-```
+1.  To see a pretty JSON representation of devices and their ports that
+    are currently connected, do:
+    
+    ```shell
+    $ gandalf -s
+    ```
 
-&#x2026;where m is a mapping file of lines in the form of:
-
-`b686cf1a8fa87fa861462955edf5811a71841447:2000`
-hashmarks are comments.
-
-you can also daemonize `gandalf` with the `-d` flag.
-
-After daemonizing, you might want to reload the mapping file. You can
-do this by first editing the original file and then just calling
-gandalf with:
-
-**NOTE**:You might need to end up doing this under sudo as `gandalf`
- needs to made a pid file under `/var/run`.
-
-```shell
-$ gandalf -r
-```
-
-`gandalf` can be louder about what's happening behind the scenes by
-invoking it with the `-v`, `--verbose` flag.
+2.  To reload the `gandalf` with a new set of mappings, do:
+    
+    ```shell
+    $ gandalf -r
+    ```
+    
+    This will cancel all running threads and reload from the original
+    mappings file, so make your changes there.
 
 Check out the man page, accessible with:
 

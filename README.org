@@ -34,42 +34,46 @@ This should install both the command line tool gandalf and the usbmux
 OCaml library.
 
 * gandalf usage.
-You can use the command line tool just by using it on the comamnd
-line.
 
-#+BEGIN_SRC shell
-$ gandalf
-#+END_SRC
+The following are a series of usages of ~gandalf~, all short handle
+arguments have long-forms as well and ~-v~ can be added at any time.
 
-This will start up ~gandalf~ in listen mode, that is it will print out
-whenever a device connects or disconnects.
+1) See with realtime updates what devices are connected 
 
-Doing:
+   #+BEGIN_SRC shell
+   $ gandalf
+   #+END_SRC
 
-#+BEGIN_SRC shell
-$ gandalf -m mapping
-#+END_SRC
+   This will start up ~gandalf~ in listen mode, that is it will print
+   out whenever a device connects or disconnects.
 
-...where m is a mapping file of lines in the form of:
+2) Start with a mapping file which is of the form ~<udid>:<port>~. The
+   ~#~ character starts comments
 
-~b686cf1a8fa87fa861462955edf5811a71841447:2000~
-hashmarks are comments.
+   #+BEGIN_SRC shell
+   $ gandalf -m mapping
+   #+END_SRC
 
-you can also daemonize ~gandalf~ with the ~-d~ flag.
+2.1) You can also daemonize ~gandalf~ with the ~-d~ flag. *NOTE*: You
+might need to end up doing that under sudo as ~gandalf~ needs to
+make a pid file under ~/var/run~.
 
-After daemonizing, you might want to reload the mapping file. You can
-do this by first editing the original file and then just calling
-gandalf with:
+3) To see a pretty JSON representation of devices and their ports that
+   are currently connected, do:
+   
+   #+BEGIN_SRC shell
+   $ gandalf -s
+   #+END_SRC
 
-*NOTE*:You might need to end up doing this under sudo as ~gandalf~
- needs to made a pid file under ~/var/run~.
+4) To reload the ~gandalf~ with a new set of mappings, do:
 
-#+BEGIN_SRC shell
-$ gandalf -r
-#+END_SRC
+   #+BEGIN_SRC shell
+   $ gandalf -r
+   #+END_SRC
 
-~gandalf~ can be louder about what's happening behind the scenes by
-invoking it with the ~-v~, ~--verbose~ flag.
+   This will cancel all running threads and reload from the original
+   mappings file, so make your changes there.
+
 
 Check out the man page, accessible with:
 #+BEGIN_SRC shell
