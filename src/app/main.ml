@@ -88,14 +88,26 @@ let entry_point =
         $ status)
 
 let top_level_info =
-  let doc = "Control TCP forwarding for sshing iDevices" in
+  let doc = "Control TCP forwarding for iDevices" in
   let man = [`S "DESCRIPTION";
              `P "$(b, $(tname)) is a program for controlling \
                  the interface of ssh tcp iphone";
-             `S "USAGE";
-             `P "if$(b, $(tname)) is invoked with no arguments then it begins \
-                 in listen mode, which means it will just show the DeviceIDs as assigned \
-                 by usbmuxd and the device's udid.";
+             `S "EXAMPLES";
+             `P "1) See with realtime updates what devices are connected \
+                 This will start up gandalf in listen mode, that is it will print out \
+                 whenver a device connects or disconnects";
+             `Pre "$(b, $(tname))";
+             `P "2) Start with a mapping file which is of the form <udid>:<port>, the \
+                 # character starts comments.";
+             `Pre "$(b, $(tname)) -m mapping_file";
+             `P "2.1) Daemonize $(b, $(tname)) with the -d flag. *NOTE*: You \
+                 might need to end up doing that under sudo as $(b, $(tname)) needs to \
+                 make a pid file under /var/run.";
+             `P "3) See a pretty JSON representation of devices and their ports that \
+                 are currently connected.";
+             `Pre "$(b, $(tname)) -s";
+             `P "4) Reload $(b, $(tname)) with a new set of mappings";
+             `Pre "$(b, $(tname)) -r";
              `S "AUTHOR";
              `P "Edgar Aroutiounian"]
   in

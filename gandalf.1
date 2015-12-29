@@ -6,7 +6,7 @@
 .ad l
 .SH NAME
 .P
-gandalf \- Control TCP forwarding for sshing iDevices
+gandalf \- Control TCP forwarding for iDevices
 .SH SYNOPSIS
 .P
 \fBgandalf\fR [\fIOPTION\fR]... 
@@ -27,6 +27,9 @@ Simple file mapping udid to ports, expecting a file like 123gfdgefrgt234:2000
 \fB\-r\fR, \fB\-\-reload\fR
 Stop running threads and reload the mappings from the original mapping file path.
 .TP 4
+\fB\-s\fR, \fB\-\-status\fR
+Pretty print json of currently tunneled devices
+.TP 4
 \fB\-t\fR \fIVAL\fR, \fB\-\-tries\fR=\fIVAL\fR (absent=3)
 How many times to retry action
 .TP 4
@@ -35,9 +38,33 @@ Output Debugging Info
 .TP 4
 \fB\-\-version\fR
 Show version information.
-.SH USAGE
+.SH EXAMPLES
 .P
-if\fB gandalf\fR is invoked with no arguments then it begins in listen mode, which means it will just show the DeviceIDs as assigned by usbmuxd and the device's udid.
+1) See with realtime updates what devices are connected This will start up gandalf in listen mode, that is it will print out whenver a device connects or disconnects
+.P
+.nf
+\fB gandalf\fR
+.fi
+.P
+2) Start with a mapping file which is of the form <udid>:<port>, the # character starts comments.
+.P
+.nf
+\fB gandalf\fR \-m mapping_file
+.fi
+.P
+2.1) Daemonize \fB gandalf\fR with the \-d flag. *NOTE*: Youmight need to end up doing that under sudo as ~gandalf~ needs tomake a pid file under /var/run.
+.P
+3) See a pretty JSON representation of devices and their ports that are currently connected.
+.P
+.nf
+\fB gandalf\fR \-s
+.fi
+.P
+4) Reload \fB gandalf\fR with a new set of mappings
+.P
+.nf
+\fB gandalf\fR \-r
+.fi
 .SH AUTHOR
 .P
 Edgar Aroutiounian
