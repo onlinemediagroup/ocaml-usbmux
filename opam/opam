@@ -24,6 +24,7 @@ depends: [
   "ANSITerminal"
   "cmdliner" {build}
   "lwt" { >= "2.5.1" }
+  "cohttp"
   "ocamlfind" {build}
   "plist"
   "stringext"
