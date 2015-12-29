@@ -2,11 +2,11 @@ open Lwt.Infix
 module T = ANSITerminal
 module B = Yojson.Basic
 module U = Yojson.Basic.Util
+module P = Printf
 
 type platform = Linux | Darwin
 
-let platform_of_string = function
-  | "Darwin" -> Darwin | _ -> Linux
+let platform_of_string = function | "Darwin" -> Darwin | _ -> Linux
 
 let current_platform = ref Linux
 
@@ -16,7 +16,7 @@ let byte_swap_16 value =
 let time_now () =
   let open Unix in
   let localtime = localtime (time ()) in
-  Printf.sprintf "[%02u:%02u:%02u]" localtime.tm_hour localtime.tm_min localtime.tm_sec
+  P.sprintf "[%02u:%02u:%02u]" localtime.tm_hour localtime.tm_min localtime.tm_sec
 
 let colored_message
     ?(time_color=T.Yellow)
@@ -54,11 +54,11 @@ let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog 
         prog
         (match exn_handler with Some f -> f | None -> Unix.(function
              | Unix_error (_, name, _) ->
-               log_info_bad (Printf.sprintf "Attempt %d, %s failed" (current_count + 1) name) >>
+               log_info_bad (P.sprintf "Attempt %d, %s failed" (current_count + 1) name) >>
                Lwt_unix.sleep wait_between_failure >>= do_start (current_count + 1)
              | Lwt.Canceled -> Lwt.return_unit
              | exn ->
-               log_info_bad ~exn (Printf.sprintf "Attempt %d" (current_count + 1)) >>
+               log_info_bad ~exn (P.sprintf "Attempt %d" (current_count + 1)) >>
                Lwt_unix.sleep wait_between_failure >>= do_start (current_count + 1)
            ))
     end
@@ -134,7 +134,7 @@ module Protocol = struct
         | 2 -> Result Device_requested_not_connected
         | 3 -> Result Port_requested_not_available
         | 5 -> Result Malformed_request
-        | n -> raise (Unknown_reply (Printf.sprintf "Unknown result code: %d" n)))
+        | n -> raise (Unknown_reply (P.sprintf "Unknown result code: %d" n)))
     | "Attached" ->
       Event (Attached
                {serial_number = U.member "SerialNumber" handle |> U.to_string;
@@ -183,6 +183,8 @@ module Relay = struct
 
   let pid_file = "/var/run/gandalf.pid"
 
+  let status_server_query = Uri.of_string "http://localhost:5000"
+
   let mapping_file = ref ""
 
   let gandalf_pid () =
@@ -224,16 +226,16 @@ module Relay = struct
           Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
           match parse_reply buffer with
           | Result Success ->
-            (Printf.sprintf "Tunneling. Udid: %s Port: %d \
-                             Device_id: %d" udid port device_id)
+            (P.sprintf "Tunneling. Udid: %s Port: %d \
+                        Device_id: %d" udid port device_id)
             |> log_info_success >> echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
           | Result Device_requested_not_connected ->
-            (Printf.sprintf "Tunneling: Device requested was not connected. \
-                             Udid: %s Device_id: %d" udid device_id)
+            (P.sprintf "Tunneling: Device requested was not connected. \
+                        Udid: %s Device_id: %d" udid device_id)
             |> log_info_bad
           | Result Port_requested_not_available ->
-            (Printf.sprintf "Tunneling. Port requested wasn't available. \
-                             Udid: %s Port: %d Device_id: %d" udid port device_id)
+            (P.sprintf "Tunneling. Port requested wasn't available. \
+                        Udid: %s Port: %d Device_id: %d" udid port device_id)
             |> log_info_bad
           | _ -> Lwt.return_unit
         end
@@ -268,8 +270,8 @@ module Relay = struct
       exit 3
     | Unix.Unix_error(Unix.ESRCH, _, _) ->
       error_with_color
-        (Printf.sprintf "Are you sure relay was running already? \
-                         Pid in %s did not match running relay " pid_file)
+        (P.sprintf "Are you sure relay was running already? \
+                    Pid in %s did not match running relay " pid_file)
       |> prerr_endline;
       exit 5
 
@@ -281,8 +283,8 @@ module Relay = struct
         write open_pid_file current_pid 0 (String.length current_pid) |> ignore;
         close open_pid_file
       with Unix_error(EACCES, _, _) ->
-        error_with_color (Printf.sprintf "Couldn't open pid file %s, \
-                                          make sure you have right permissions"
+        error_with_color (P.sprintf "Couldn't open pid file %s, \
+                                     make sure you have right permissions"
                             pid_file)
         |> prerr_endline;
         exit 2;
@@ -316,7 +318,7 @@ module Relay = struct
         exit 6
       | e ->
         error_with_color
-          (Printf.sprintf "Unhandled async exception: %s" (Printexc.to_string e))
+          (P.sprintf "Unhandled async exception: %s" (Printexc.to_string e))
         |> prerr_endline;
         exit 4
 
@@ -347,7 +349,7 @@ module Relay = struct
                          ("UDID", `String udid)] : B.json)
               end)) |> B.to_string
             in
-            let msg = Printf.sprintf
+            let msg = P.sprintf
                 "HTTP/1.1 200 OK\r\n\
                  Connection: Closed\r\n\
                  Content-Length:%d\r\n\r\n\
@@ -432,10 +434,12 @@ module Relay = struct
       Sys.(signal sigusr2 (Signal_handle begin fun _ ->
           let relay_count = List.length !running_servers in
           complete_shutdown ();
-          log_info_success (Printf.sprintf "Shutdown %d relays, exiting now" relay_count)
+          log_info_success (P.sprintf "Shutdown %d relays, exiting now" relay_count)
           |> Lwt.ignore_result;
           exit 0;
-        end))
+        end));
+      (* Handle plain kill from command line *)
+      Sys.(signal sigterm (Signal_handle (fun _ -> complete_shutdown ())))
     ] |> List.iter ignore
 
 end

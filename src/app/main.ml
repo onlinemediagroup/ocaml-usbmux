@@ -43,7 +43,7 @@ let show_status () =
   let open Cohttp_lwt_unix in
   let colorize = Usbmux.colored_message ~with_time:false in
   (try
-     (Client.get (Uri.of_string "http://localhost:5000") >>= fun (_, body) ->
+     (Client.get Usbmux.Relay.status_server_query >>= fun (_, body) ->
       Cohttp_lwt_body.to_string body >>= fun s ->
       (Printf.sprintf "%s\n%s"
          ("Current actively tunneled devices, \
