@@ -41,10 +41,19 @@ let status =
 
 let show_status () =
   let open Cohttp_lwt_unix in
+  let colorize = Usbmux.colored_message ~with_time:false in
   (try
      (Client.get (Uri.of_string "http://localhost:5000") >>= fun (_, body) ->
       Cohttp_lwt_body.to_string body >>= fun s ->
-      Lwt_io.printl (Usbmux.colored_message "Currently Tunneled Devices") >>= fun () ->
+      (Printf.sprintf "%s\n%s"
+         ("Current actively tunneled devices, \
+           ssh into them with the port numbers printed below.\n\
+           Example:" |> colorize ~message_color:Usbmux.T.White)
+         ("\tssh root@localhost -p <some_port>" |> colorize ~message_color:Usbmux.T.Cyan)
+      )
+      |> Lwt_io.printl >>= fun () ->
+      (* "Currently Tunneled Devices" *)
+      (* |> Usbmux.colored_message ~with_time:false |> Lwt_io.printl >>= fun () -> *)
       Yojson.Basic.(from_string s |> pretty_to_string) |> Lwt_io.printl)
      |> Lwt_main.run |> ignore;
    with
