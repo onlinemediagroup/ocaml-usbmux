@@ -175,6 +175,8 @@ end
 
 module Relay = struct
 
+  type action = Shutdown | Reload
+
   let running_relays : unit Lwt.t list ref = ref []
 
   let running_servers = ref []
@@ -182,6 +184,12 @@ module Relay = struct
   let pid_file = "/var/run/gandalf.pid"
 
   let mapping_file = ref ""
+
+  let gandalf_pid () =
+    let open_pid_file = open_in pid_file in
+    let target_pid = input_line open_pid_file |> int_of_string in
+    close_in open_pid_file;
+    target_pid
 
   let echo ic oc = Lwt_io.(write_chars oc (read_chars ic))
 
@@ -239,6 +247,32 @@ module Relay = struct
     running_servers := server :: !running_servers;
     this_thread
 
+  (* We reload the mapping by sending a user defined signal to the
+     current running daemon which will then cancel the running
+     threads, ie the servers and connections, and reload from the
+     original given mapping file. Or we just want to shutdown the
+     servers and exit cleanly *)
+  let perform action =
+    let target_pid = gandalf_pid () in
+    try
+      Unix.kill target_pid (match action with
+            Reload -> Sys.sigusr1
+          | Shutdown -> Sys.sigusr2);
+      exit 0
+    with
+      Unix.Unix_error(Unix.EPERM, _, _) ->
+      (match action with Reload -> "Couldn't reload mapping, permissions error"
+                       | Shutdown -> "Couldn't shutdown cleanly, permissions error")
+      |> error_with_color
+      |> prerr_endline;
+      exit 3
+    | Unix.Unix_error(Unix.ESRCH, _, _) ->
+      error_with_color
+        (Printf.sprintf "Are you sure relay was running already? \
+                         Pid in %s did not match running relay " pid_file)
+      |> prerr_endline;
+      exit 5
+
   let create_pid_file () =
     Unix.(
       try
@@ -253,30 +287,6 @@ module Relay = struct
         |> prerr_endline;
         exit 2;
     )
-
-  (* We reload the mapping by sending a user defined signal to the
-     current running daemon which will then cancel the running
-     threads, ie the servers and connections, and reload from the
-     original given mapping file *)
-  let reload_mapping () =
-    let open_pid_file = open_in pid_file in
-    let target_pid = input_line open_pid_file |> int_of_string in
-    close_in open_pid_file;
-    try
-      Unix.kill target_pid Sys.sigusr1;
-      exit 0
-    with
-      Unix.Unix_error(Unix.EPERM, _, _) ->
-      error_with_color
-        (Printf.sprintf "Couldn't reload mapping, must have correct permissions")
-      |> prerr_endline;
-      exit 3
-    | Unix.Unix_error(Unix.ESRCH, _, _) ->
-      error_with_color
-        (Printf.sprintf "Are you sure relay was running already? \
-                         Pid in %s did not match running relay " pid_file)
-      |> prerr_endline;
-      exit 5
 
   let () =
     (* Since we spin up the TCP server + echo threads with Lwt.async,
@@ -413,6 +423,10 @@ module Relay = struct
         (* Spin it up again *)
         begin_relay ~device_map:!mapping_file ~max_retries false |> Lwt.ignore_result
       end))
-    |> ignore
+    |> ignore;
+    Sys.(signal sigusr2 (Signal_handle begin fun _ ->
+        print_endline "Got siguser 2, guess you tried to cancel"
+      end))
+    |> ignore;
 
 end

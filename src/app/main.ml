@@ -17,6 +17,11 @@ let do_daemonize =
   let doc = "Whether$(b, $(tname)) should run as a daemon" in
   value & flag & info ["d";"daemonize"] ~doc
 
+let do_exit =
+  let open Arg in
+  let doc = "Gracefully exit current running relay" in
+  value & flag & info ["e";"exit"] ~doc
+
 let retry_count =
   let open Arg in
   let doc = "How many times to retry action" in
@@ -54,11 +59,14 @@ let begin_program
     do_daemonize
     max_retries
     do_reload_mapping
-    do_status =
+    do_status
+    do_exit =
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
-  if do_reload_mapping then Usbmux.Relay.reload_mapping ();
+  if do_exit then Usbmux.Relay.(perform Shutdown);
+
+  if do_reload_mapping then Usbmux.Relay.(perform Reload);
 
   if do_status then show_status ();
 
@@ -85,7 +93,8 @@ let entry_point =
         $ do_daemonize
         $ retry_count
         $ reload_mapping
-        $ status)
+        $ status
+        $ do_exit )
 
 let top_level_info =
   let doc = "Control TCP forwarding for iDevices" in
