@@ -188,13 +188,11 @@ module Relay = struct
 
   let running_relays : unit Lwt.t list ref = ref []
 
-  let running_servers = ref []
+  let (running_servers, mapping_file) = ref [], ref ""
 
   let pid_file = "/var/run/gandalf.pid"
 
   let status_server_query = Uri.of_string "http://localhost:5000"
-
-  let mapping_file = ref ""
 
   let gandalf_pid () =
     let open_pid_file = open_in pid_file in
@@ -350,13 +348,15 @@ module Relay = struct
 
   let start_status_server ~device_mapping ~devices =
     let stat_addr = Unix.(ADDR_INET(inet_addr_loopback, 5000)) in
-    let devs = device_list_of_hashtable ~device_mapping ~devices in
+
+    let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
+
     let stat_server =
       Lwt_io.establish_server stat_addr begin fun (reply, response) ->
         (Lwt_io.read_line reply >>= function
             "GET / HTTP/1.1" ->
             let as_json =
-              `List (devs |> List.map begin fun (port, device_id, udid) ->
+              `List (!device_list |> List.map begin fun (port, device_id, udid) ->
                   (`Assoc [("Port", `Int port);
                            ("DeviceID", `Int device_id);
                            ("UDID", `String udid)] : B.json)
@@ -377,6 +377,29 @@ module Relay = struct
     in
     (* Register this server as well *)
     running_servers := stat_server :: !running_servers;
+
+    (* Create another listener thread for updates to the devices
+       listing, needed as device plugs in and out *)
+    Lwt.async begin fun () ->
+      Protocol.(create_listener ~max_retries:3 ~event_cb:begin function
+          | Protocol.Event Attached { serial_number = s; connection_speed = _;
+                                      connection_type = _; product_id = _;
+                                      location_id = _; device_id = d; } ->
+            if not (Hashtbl.mem devices d)
+            then
+              load_mappings !mapping_file >|= fun device_mapping ->
+              Hashtbl.add devices d s;
+              device_list := device_list_of_hashtable ~device_mapping ~devices
+            else
+              Lwt.return ()
+          | Protocol.Event Detached d ->
+            load_mappings !mapping_file >|= fun device_mapping ->
+            Hashtbl.remove devices d;
+            device_list := device_list_of_hashtable ~device_mapping ~devices
+          | _ -> Lwt.return_unit
+        end)
+    end;
+
     fst (Lwt.wait ())
 
   let rec begin_relay ~device_map ~max_retries do_daemonize =
