@@ -188,6 +188,8 @@ module Relay = struct
 
   type action = Shutdown | Reload
 
+  let relay_lock = Lwt_mutex.create ()
+
   let running_relays : unit Lwt.t list ref = ref []
 
   let (running_servers, mapping_file) = ref [], ref ""
@@ -257,12 +259,13 @@ module Relay = struct
       end
     in
     let this_thread = fst (Lwt.task ()) in
-    (* Register the thread *)
-    running_relays := this_thread :: !running_relays;
-    (* Register the server *)
-    running_servers := server :: !running_servers;
-    this_thread
-
+    Lwt_mutex.with_lock relay_lock begin fun () ->
+      (* Register the thread *)
+      running_relays := this_thread :: !running_relays;
+      (* Register the server *)
+      running_servers := server :: !running_servers;
+      this_thread
+    end
 
   let create_pid_file () =
     Unix.(
