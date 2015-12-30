@@ -1,6 +1,6 @@
 opam-version: "1.2"
 name: "usbmux"
-version: "0.1"
+version: "0.2"
 maintainer: "Edgar Aroutiounian <edgar.factorial@gmail.com>"
 authors: [ "Edgar Aroutiounian <edgar.factorial@gmail.com>" ]
 license: "PROP"
@@ -22,7 +22,8 @@ build-test: [
 available:[ocaml-version >= "4.02.3"]
 depends: [
   "ANSITerminal"
-  "cmdliner" {build}
+  "cmdliner" { build }
+  "oasis" { build }
   "lwt" { >= "2.5.1" }
   "cohttp"
   "ocamlfind" {build}

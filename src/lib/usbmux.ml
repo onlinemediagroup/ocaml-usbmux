@@ -14,9 +14,10 @@ let byte_swap_16 value =
   ((value land 0xFF) lsl 8) lor ((value lsr 8) land 0xFF)
 
 let time_now () =
-  let open Unix in
-  let localtime = localtime (time ()) in
-  P.sprintf "[%02u:%02u:%02u]" localtime.tm_hour localtime.tm_min localtime.tm_sec
+  Unix.(
+    let localtime = localtime (time ()) in
+    P.sprintf "[%02u:%02u:%02u]"
+      localtime.tm_hour localtime.tm_min localtime.tm_sec)
 
 let colored_message
     ?(time_color=T.Yellow)
@@ -43,7 +44,7 @@ let log_info_success msg = match !current_platform with
 let ( >> ) x y = x >>= fun () -> y
 
 let platform () =
-  Lwt_process.pread_line (Lwt_process.shell "uname") >|= platform_of_string
+  Lwt_process.(pread_line (shell "uname") >|= platform_of_string)
 
 let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog =
   assert (max_retries > 0 && max_retries < 20);
@@ -117,43 +118,44 @@ module Protocol = struct
 
   let read_header i_chan =
     i_chan |> Lwt_io.atomic begin fun ic ->
-      Lwt_io.LE.read_int32 ic >>= fun raw_count ->
-      Lwt_io.LE.read_int32 ic >>= fun raw_version ->
-      Lwt_io.LE.read_int32 ic >>= fun raw_request ->
-      Lwt_io.LE.read_int32 ic >|= fun raw_tag ->
-      Int32.(to_int raw_count,
-             to_int raw_version,
-             to_int raw_request,
-             to_int raw_tag)
+      Lwt_io.LE.(read_int32 ic >>= fun raw_count ->
+                 read_int32 ic >>= fun raw_version ->
+                 read_int32 ic >>= fun raw_request ->
+                 read_int32 ic >|= fun raw_tag ->
+                 Int32.(to_int raw_count,
+                        to_int raw_version,
+                        to_int raw_request,
+                        to_int raw_tag))
     end
 
   (** Highly advised to only change value of version of default values *)
   let write_header ?(version=Plist) ?(request=8) ?(tag=1) ~total_len o_chan =
     o_chan |> Lwt_io.atomic begin fun oc ->
       ([total_len; if version = Plist then 1 else 0; request; tag]
-       |>List.map Int32.of_int )
+       |> List.map Int32.of_int )
       |> Lwt_list.iter_s (Lwt_io.LE.write_int32 oc)
     end
 
   let parse_reply raw_reply =
     let handle = Plist.parse_dict raw_reply in
-    match U.member "MessageType" handle |> U.to_string with
-    | "Result" -> (match U.member "Number" handle |> U.to_int with
-        | 0 -> Result Success
-        | 2 -> Result Device_requested_not_connected
-        | 3 -> Result Port_requested_not_available
-        | 5 -> Result Malformed_request
-        | n -> raise (Unknown_reply (P.sprintf "Unknown result code: %d" n)))
-    | "Attached" ->
-      Event (Attached
-               {serial_number = U.member "SerialNumber" handle |> U.to_string;
-                connection_speed = U.member "ConnectionSpeed" handle |> U.to_int;
-                connection_type = U.member "ConnectionType" handle |> U.to_string;
-                product_id = U.member "ProductID" handle |> U.to_int;
-                location_id = U.member "LocationID" handle |> U.to_int;
-                device_id = U.member "DeviceID" handle |> U.to_int ;})
-    | "Detached" -> Event (Detached (U.member "DeviceID" handle |> U.to_int))
-    | otherwise -> raise (Unknown_reply otherwise)
+    U.(
+      match member "MessageType" handle |> to_string with
+      | "Result" -> (match member "Number" handle |> to_int with
+          | 0 -> Result Success
+          | 2 -> Result Device_requested_not_connected
+          | 3 -> Result Port_requested_not_available
+          | 5 -> Result Malformed_request
+          | n -> raise (Unknown_reply (P.sprintf "Unknown result code: %d" n)))
+      | "Attached" ->
+        Event (Attached
+                 {serial_number = member "SerialNumber" handle |> to_string;
+                  connection_speed = member "ConnectionSpeed" handle |> to_int;
+                  connection_type = member "ConnectionType" handle |> to_string;
+                  product_id = member "ProductID" handle |> to_int;
+                  location_id = member "LocationID" handle |> to_int;
+                  device_id = member "DeviceID" handle |> to_int ;})
+      | "Detached" -> Event (Detached (member "DeviceID" handle |> to_int))
+      | otherwise -> raise (Unknown_reply otherwise))
 
   let create_listener ?event_cb ~max_retries =
     with_retries ~max_retries begin fun () ->
@@ -361,9 +363,9 @@ module Relay = struct
        listing, needed as device plugs in and out *)
     Lwt.async begin fun () ->
       Protocol.(create_listener ~max_retries:3 ~event_cb:begin function
-          | Protocol.Event Attached { serial_number = s; connection_speed = _;
-                                      connection_type = _; product_id = _;
-                                      location_id = _; device_id = d; } ->
+          | Event Attached { serial_number = s; connection_speed = _;
+                             connection_type = _; product_id = _;
+                             location_id = _; device_id = d; } ->
             if not (Hashtbl.mem devices d)
             then
               load_mappings !mapping_file >|= fun device_mapping ->
@@ -371,7 +373,7 @@ module Relay = struct
               device_list := device_list_of_hashtable ~device_mapping ~devices
             else
               Lwt.return ()
-          | Protocol.Event Detached d ->
+          | Event Detached d ->
             load_mappings !mapping_file >|= fun device_mapping ->
             Hashtbl.remove devices d;
             device_list := device_list_of_hashtable ~device_mapping ~devices
@@ -425,11 +427,15 @@ module Relay = struct
         if do_daemonize then begin
           (* This order matters *)
           Lwt_daemon.daemonize ~syslog:true ();
+          (* Might require super user permissions *)
           create_pid_file ()
         end;
-        (* Asynchronously create concurrently the relay tunnels *)
+        (* Asynchronously create concurrently the relay tunnels and
+           status server *)
         Lwt.async begin fun () ->
+          (* Create, start a simple HTTP status server *)
           start_status_server ~device_mapping ~devices <&>
+          (* Create, start the tunnels *)
           ((device_list_of_hashtable ~device_mapping ~devices)
            |> Lwt_list.iter_p do_tunnel)
         end;
@@ -447,22 +453,22 @@ module Relay = struct
   (* Mutually recursive function, handle_signals needs name of
      begin_relay and begin_relay needs the name handle_signals *)
   and handle_signals max_retries =
-    [ (* Broken SSH pipes shouldn't exit our program *)
-      Sys.(signal sigpipe Signal_ignore);
-      (* Stop the running threads, call begin_relay again *)
-      Sys.(signal sigusr1 (Signal_handle (fun _ -> do_restart max_retries)));
-      (* Shutdown the servers, relays then exit *)
-      Sys.(signal sigusr2 (Signal_handle begin fun _ ->
-          let relay_count = List.length !running_servers in
-          complete_shutdown ();
-          (P.sprintf "Shutdown %d relays, exiting now" relay_count)
-          |> log_info_success
-          |> Lwt.ignore_result;
-          exit 0
-        end));
-      (* Handle plain kill from command line *)
-      Sys.(signal sigterm (Signal_handle (fun _ -> complete_shutdown ())))
-    ] |> List.iter ignore
+    Sys.([ (* Broken SSH pipes shouldn't exit our program *)
+        signal sigpipe Signal_ignore;
+        (* Stop the running threads, call begin_relay again *)
+        signal sigusr1 (Signal_handle (fun _ -> do_restart max_retries));
+        (* Shutdown the servers, relays then exit *)
+        signal sigusr2 (Signal_handle begin fun _ ->
+            let relay_count = List.length !running_servers in
+            complete_shutdown ();
+            P.sprintf "Shutdown %d relays, exiting now" relay_count
+            |> log_info_success
+            |> Lwt.ignore_result;
+            exit 0
+          end);
+        (* Handle plain kill from command line *)
+        signal sigterm (Signal_handle (fun _ -> complete_shutdown ()))
+      ]) |> List.iter ignore
 
   (* We reload the mapping by sending a user defined signal to the
      current running daemon which will then cancel the running
@@ -471,23 +477,24 @@ module Relay = struct
      servers and exit cleanly *)
   let perform action =
     let target_pid = gandalf_pid () in
-    try
-      Unix.kill target_pid (match action with
-            Reload -> Sys.sigusr1
-          | Shutdown -> Sys.sigusr2);
-      exit 0
-    with
-      Unix.Unix_error(Unix.EPERM, _, _) ->
-      (match action with Reload -> "Couldn't reload mapping, permissions error"
-                       | Shutdown -> "Couldn't shutdown cleanly, \
-                                      permissions error")
-      |> error_with_color |> prerr_endline;
-      exit 3
-    | Unix.Unix_error(Unix.ESRCH, _, _) ->
-      error_with_color
-        (P.sprintf "Are you sure relay was running already? \
-                    Pid in %s did not match running relay " pid_file)
-      |> prerr_endline;
-      exit 5
+    Unix.(
+      try
+        Sys.(match action with Reload -> sigusr1 | Shutdown -> sigusr2)
+        |> kill target_pid;
+        exit 0
+      with
+        Unix_error(EPERM, _, _) ->
+        (match action with Reload -> "Couldn't reload mapping, permissions error"
+                         | Shutdown -> "Couldn't shutdown cleanly, \
+                                        permissions error")
+        |> error_with_color |> prerr_endline;
+        exit 3
+      | Unix_error(ESRCH, _, _) ->
+        error_with_color
+          (P.sprintf "Are you sure relay was running already? \
+                      Pid in %s did not match running relay " pid_file)
+        |> prerr_endline;
+        exit 5
+    )
 
 end

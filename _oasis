@@ -1,7 +1,7 @@
 # -*- conf -*-
 OASISFormat: 0.4
 Name:        usbmux
-Version:     0.1
+Version:     0.2
 Synopsis:    Control port remapping for iOS devices
 Authors:     Edgar Aroutiounian <edgar.factorial@gmail.com>
 Maintainers: Edgar Aroutiounian <edgar.factorial@gmail.com>
@@ -14,7 +14,7 @@ PostBuildCommand:
   sh install_man.sh
 
 Description:
-  Talk to iDevices
+  Talk to jailbroken iDevices over USB.
 
 Library usbmux
   Path:         src/lib

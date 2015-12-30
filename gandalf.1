@@ -12,7 +12,7 @@ gandalf \- Control TCP forwarding for iDevices
 \fBgandalf\fR [\fIOPTION\fR]... 
 .SH DESCRIPTION
 .P
-\fB gandalf\fR is a program for controlling the interface of ssh tcp iphone
+\fB gandalf\fR lets you ssh over USB to your jailbroken iDevices like iPhone, iPad, iTouch. You need to have the usbmuxd daemon running, on OS X this means you don't have to do anything but on Linux you need to install and run it.
 .SH OPTIONS
 .TP 4
 \fB\-d\fR, \fB\-\-daemonize\fR
@@ -55,7 +55,7 @@ Show version information.
 \fB gandalf\fR \-m mapping_file
 .fi
 .P
-2.1) Daemonize \fB gandalf\fR with the \-d flag. *NOTE*: You might need to end up doing that under sudo as \fB gandalf\fR needs to make a pid file under /var/run.
+2.1) Daemonize \fB gandalf\fR with the \-d flag. *NOTE*: You might need to end up doing that under sudo as \fB gandalf\fR needs to make a pid file under /var/run. If daemonizing is failing, try running as root. After daemonzing, check the system log for debugging info
 .P
 3) See a pretty JSON representation of devices and their ports that are currently connected.
 .P
@@ -67,6 +67,12 @@ Show version information.
 .P
 .nf
 \fB gandalf\fR \-r
+.fi
+.P
+5) Cleanly exit \fB gandalf\fR, note this might requiresuper user permissions.
+.P
+.nf
+\fB gandalf\fR \-e
 .fi
 .SH AUTHOR
 .P

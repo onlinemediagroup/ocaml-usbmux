@@ -17,7 +17,9 @@ managers are old.
 
 # Installation
 
-In this cloned repository, do: 
+You need to have opam installed, it is OCaml's package manager.
+
+Once you have opam on your system clone this repository and do: 
 
 ```shell
 $ opam pin add usbmux . -y
@@ -28,7 +30,7 @@ OCaml library.
 
 # gandalf usage.
 
-The following are a series of usages of `gandalf`, all short handle
+The following are a series of usages of `gandalf`, all short form
 arguments have long-forms as well and `-v` can be added at any time.
 
 1.  See with realtime updates what devices are connected 
@@ -66,6 +68,13 @@ make a pid file under `/var/run`.
     
     This will cancel all running threads and reload from the original
     mappings file, so make your changes there.
+
+3.  To cleanly exit `gandalf`, do:
+    **NOTE** This might require super user permissions.
+    
+    ```shell
+    $ gandalf -e
+    ```
 
 Check out the man page, accessible with:
 

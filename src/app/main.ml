@@ -6,38 +6,32 @@ let be_verbose =
   Arg.(value & flag & info ["v";"verbose"] ~doc)
 
 let forward_connection_file =
-  let open Arg in
   let doc = "Simple file mapping udid to ports, expecting a file \
              like 123gfdgefrgt234:2000"
   in
-  value & opt (some non_dir_file) None & info ["m"; "mappings"] ~doc
+  Arg.(value & opt (some non_dir_file) None & info ["m"; "mappings"] ~doc)
 
 let do_daemonize =
-  let open Arg in
   let doc = "Whether$(b, $(tname)) should run as a daemon" in
-  value & flag & info ["d";"daemonize"] ~doc
+  Arg.(value & flag & info ["d";"daemonize"] ~doc)
 
 let do_exit =
-  let open Arg in
   let doc = "Gracefully exit current running relay" in
-  value & flag & info ["e";"exit"] ~doc
+  Arg.(value & flag & info ["e";"exit"] ~doc)
 
 let retry_count =
-  let open Arg in
   let doc = "How many times to retry action" in
-  value & opt int 3 & info ["t"; "tries"] ~doc
+  Arg.(value & opt int 3 & info ["t"; "tries"] ~doc)
 
 let reload_mapping =
-  let open Arg in
   let doc = "Stop running threads and reload the mappings \
              from the original mapping file path."
   in
-  value & flag & info ["r";"reload"] ~doc
+  Arg.(value & flag & info ["r";"reload"] ~doc)
 
 let status =
-  let open Arg in
   let doc = "Pretty print json of currently tunneled devices" in
-  value & flag & info ["s";"status"] ~doc
+  Arg.(value & flag & info ["s";"status"] ~doc)
 
 let show_status () =
   let open Cohttp_lwt_unix in
@@ -70,30 +64,29 @@ let begin_program
     do_reload_mapping
     do_status
     do_exit =
+  let module P = Usbmux.Protocol in
+  let module R = Usbmux.Relay in
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
-  if do_exit then Usbmux.Relay.(perform Shutdown);
+  if do_exit then R.(perform Shutdown);
 
-  if do_reload_mapping then Usbmux.Relay.(perform Reload);
+  if do_reload_mapping then R.(perform Reload);
 
   if do_status then show_status ();
 
-  let module P = Usbmux.Protocol in
   (* Now we start spinning up Lwt *)
   match port_pairs with
   | None ->
-    let open P in
-    Usbmux.Protocol.create_listener ~max_retries ~event_cb:begin function
-      | P.Event P.Attached { serial_number = s; connection_speed = _;
-                             connection_type = _; product_id = _; location_id = _;
-                             device_id = d; } ->
-        Lwt_io.printlf "Device %d with serial number: %s connected" d s
-      | P.Event P.Detached d -> Lwt_io.printlf "Device %d disconnected" d
-      | _ -> Lwt.return ()
-    end
-  | Some device_map ->
-    Usbmux.Relay.begin_relay ~device_map ~max_retries do_daemonize
+    P.(create_listener ~max_retries ~event_cb:begin function
+        | Event Attached { serial_number = s; connection_speed = _;
+                           connection_type = _; product_id = _; location_id = _;
+                           device_id = d; } ->
+          Lwt_io.printlf "Device %d with serial number: %s connected" d s
+        | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
+        | _ -> Lwt.return ()
+      end)
+  | Some device_map -> R.begin_relay ~device_map ~max_retries do_daemonize
 
 let entry_point =
   Term.(pure
@@ -109,8 +102,10 @@ let entry_point =
 let top_level_info =
   let doc = "Control TCP forwarding for iDevices" in
   let man = [`S "DESCRIPTION";
-             `P "$(b, $(tname)) is a program for controlling \
-                 the interface of ssh tcp iphone";
+             `P "$(b, $(tname)) lets you ssh over USB to your jailbroken \
+                 iDevices like iPhone, iPad, iTouch. You need to have the \
+                 usbmuxd daemon running, on OS X this means you don't have \
+                 to do anything but on Linux you need to install and run it.";
              `S "EXAMPLES";
              `P "1) See with realtime updates what devices are connected \
                  This will start up gandalf in listen mode, that is it \
@@ -129,6 +124,9 @@ let top_level_info =
              `Pre "$(b, $(tname)) -s";
              `P "4) Reload $(b, $(tname)) with a new set of mappings";
              `Pre "$(b, $(tname)) -r";
+             `P "5) Cleanly exit $(b, $(tname)), note this might require\
+                 super user permissions.";
+             `Pre "$(b, $(tname)) -e";
              `S "AUTHOR";
              `P "Edgar Aroutiounian"]
   in
@@ -137,5 +135,4 @@ let top_level_info =
 let () =
   match Term.eval (entry_point, top_level_info) with
   | `Ok program -> Lwt_main.run program
-  | `Error _ -> prerr_endline "Unhandled error"
   | _ -> ()

@@ -1,3 +1,6 @@
-Control port remapping for iOS devices
-Talk to iDevices
+Library, CLI to control port forwarding to jailbroken iOS devices.
 
+With port forwarding via the command line tool gandalf, you can
+do:
+
+$ ssh root@localhost -p 2000
