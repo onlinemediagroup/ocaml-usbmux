@@ -258,30 +258,6 @@ module Relay = struct
     running_servers := server :: !running_servers;
     this_thread
 
-  (* We reload the mapping by sending a user defined signal to the
-     current running daemon which will then cancel the running
-     threads, ie the servers and connections, and reload from the
-     original given mapping file. Or we just want to shutdown the
-     servers and exit cleanly *)
-  let perform action =
-    let target_pid = gandalf_pid () in
-    try
-      Unix.kill target_pid (match action with
-            Reload -> Sys.sigusr1
-          | Shutdown -> Sys.sigusr2);
-      exit 0
-    with
-      Unix.Unix_error(Unix.EPERM, _, _) ->
-      (match action with Reload -> "Couldn't reload mapping, permissions error"
-                       | Shutdown -> "Couldn't shutdown cleanly, permissions error")
-      |> error_with_color |> prerr_endline;
-      exit 3
-    | Unix.Unix_error(Unix.ESRCH, _, _) ->
-      error_with_color
-        (P.sprintf "Are you sure relay was running already? \
-                    Pid in %s did not match running relay " pid_file)
-      |> prerr_endline;
-      exit 5
 
   let create_pid_file () =
     Unix.(
@@ -456,20 +432,22 @@ module Relay = struct
         end;
         fst (Lwt.wait ())
     end
+
+  and do_restart max_retries =
+    complete_shutdown ();
+    log_info_success "Restarting relay with reloaded mappings"
+    |> Lwt.ignore_result;
+    (* Spin it up again *)
+    begin_relay ~device_map:!mapping_file ~max_retries false
+    |> Lwt.ignore_result
+
   (* Mutually recursive function, handle_signals needs name of
      begin_relay and begin_relay needs the name handle_signals *)
   and handle_signals max_retries =
     [ (* Broken SSH pipes shouldn't exit our program *)
       Sys.(signal sigpipe Signal_ignore);
       (* Stop the running threads, call begin_relay again *)
-      Sys.(signal sigusr1 (Signal_handle begin fun _ ->
-          complete_shutdown ();
-          log_info_success "Restarting relay with reloaded mappings"
-          |> Lwt.ignore_result;
-          (* Spin it up again *)
-          begin_relay ~device_map:!mapping_file ~max_retries false
-          |> Lwt.ignore_result
-        end));
+      Sys.(signal sigusr1 (Signal_handle (fun _ -> do_restart max_retries)));
       (* Shutdown the servers, relays then exit *)
       Sys.(signal sigusr2 (Signal_handle begin fun _ ->
           let relay_count = List.length !running_servers in
@@ -482,5 +460,31 @@ module Relay = struct
       (* Handle plain kill from command line *)
       Sys.(signal sigterm (Signal_handle (fun _ -> complete_shutdown ())))
     ] |> List.iter ignore
+
+  (* We reload the mapping by sending a user defined signal to the
+     current running daemon which will then cancel the running
+     threads, ie the servers and connections, and reload from the
+     original given mapping file. Or we just want to shutdown the
+     servers and exit cleanly *)
+  let perform action =
+    let target_pid = gandalf_pid () in
+    try
+      Unix.kill target_pid (match action with
+            Reload -> Sys.sigusr1
+          | Shutdown -> Sys.sigusr2);
+      exit 0
+    with
+      Unix.Unix_error(Unix.EPERM, _, _) ->
+      (match action with Reload -> "Couldn't reload mapping, permissions error"
+                       | Shutdown -> "Couldn't shutdown cleanly, \
+                                      permissions error")
+      |> error_with_color |> prerr_endline;
+      exit 3
+    | Unix.Unix_error(Unix.ESRCH, _, _) ->
+      error_with_color
+        (P.sprintf "Are you sure relay was running already? \
+                    Pid in %s did not match running relay " pid_file)
+      |> prerr_endline;
+      exit 5
 
 end

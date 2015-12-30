@@ -90,7 +90,8 @@ let begin_program
       | P.Event P.Detached d -> Lwt_io.printlf "Device %d disconnected" d
       | _ -> Lwt.return ()
     end
-  | Some device_map -> Usbmux.Relay.begin_relay ~device_map ~max_retries do_daemonize
+  | Some device_map ->
+    Usbmux.Relay.begin_relay ~device_map ~max_retries do_daemonize
 
 let entry_point =
   Term.(pure
@@ -110,18 +111,19 @@ let top_level_info =
                  the interface of ssh tcp iphone";
              `S "EXAMPLES";
              `P "1) See with realtime updates what devices are connected \
-                 This will start up gandalf in listen mode, that is it will print out \
-                 whenver a device connects or disconnects";
+                 This will start up gandalf in listen mode, that is it \
+                 will print out whenver a device connects or disconnects";
              `Pre "$(b, $(tname))";
-             `P "2) Start with a mapping file which is of the form <udid>:<port>, the \
-                 # character starts comments.";
+             `P "2) Start with a mapping file which is of the form \
+                 <udid>:<port>, the # character starts comments.";
              `Pre "$(b, $(tname)) -m mapping_file";
              `P "2.1) Daemonize $(b, $(tname)) with the -d flag. *NOTE*: You \
-                 might need to end up doing that under sudo as $(b, $(tname)) needs to \
-                 make a pid file under /var/run. If daemonizing is failing, try running \
-                 as root. After daemonzing, check the system log for debugging info";
-             `P "3) See a pretty JSON representation of devices and their ports that \
-                 are currently connected.";
+                 might need to end up doing that under sudo as $(b, $(tname)) \
+                 needs to make a pid file under /var/run. If daemonizing \
+                 is failing, try running as root. After daemonzing, \
+                 check the system log for debugging info";
+             `P "3) See a pretty JSON representation of devices and \
+                 their ports that are currently connected.";
              `Pre "$(b, $(tname)) -s";
              `P "4) Reload $(b, $(tname)) with a new set of mappings";
              `Pre "$(b, $(tname)) -r";
