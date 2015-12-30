@@ -42,22 +42,24 @@ let status =
 let show_status () =
   let open Cohttp_lwt_unix in
   let colorize = Usbmux.colored_message ~with_time:false in
-  (try
-     (Client.get Usbmux.Relay.status_server_query >>= fun (_, body) ->
-      Cohttp_lwt_body.to_string body >>= fun s ->
-      (Printf.sprintf "%s\n%s"
+  begin
+    try
+      (Client.get Usbmux.Relay.status_server_query >>= fun (_, body) ->
+       Cohttp_lwt_body.to_string body >>= fun s ->
+       Printf.sprintf "%s\n%s"
          ("Current actively tunneled devices, \
            ssh into them with the port numbers printed below.\n\
            Example:" |> colorize ~message_color:Usbmux.T.White)
-         ("\tssh root@localhost -p <some_port>" |> colorize ~message_color:Usbmux.T.Cyan)
-      )
-      |> Lwt_io.printl >>= fun () ->
-      Yojson.Basic.(from_string s |> pretty_to_string) |> Lwt_io.printl)
-     |> Lwt_main.run |> ignore
-   with
-     Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
-     Usbmux.error_with_color "Couldn't get status, check if relay is running"
-     |> prerr_endline);
+         ("\tssh root@localhost -p <some_port>"
+          |> colorize ~message_color:Usbmux.T.Cyan)
+       |> Lwt_io.printl >>= fun () ->
+       Yojson.Basic.(from_string s |> pretty_to_string) |> Lwt_io.printl)
+      |> Lwt_main.run |> ignore
+    with
+      Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
+      Usbmux.error_with_color "Couldn't get status, check if relay is running"
+      |> prerr_endline
+  end;
   exit 0
 
 let begin_program

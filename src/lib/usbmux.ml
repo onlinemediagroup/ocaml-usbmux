@@ -205,14 +205,17 @@ module Relay = struct
   let load_mappings file_name =
     Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >|= fun all_names ->
     let prepped = all_names |> List.fold_left begin fun accum line ->
-        match (Stringext.trim_left line).[0] with
-        (* Ignore comments *)
-        | '#' -> accum
-        | _ ->
-          match Stringext.split line ~on:':' with
-          | udid :: port_number :: [] ->
-            (udid, int_of_string port_number) :: accum
-          | _ -> assert false
+        if line <> "" then begin
+          match (Stringext.trim_left line).[0] with
+          (* Ignore comments *)
+          | '#' -> accum
+          | _ ->
+            match Stringext.split line ~on:':' with
+            | udid :: port_number :: [] ->
+              (udid, int_of_string port_number) :: accum
+            | _ -> assert false
+        end
+        else accum
       end []
     in
     let t = Hashtbl.create (List.length prepped) in
