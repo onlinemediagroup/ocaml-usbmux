@@ -27,7 +27,8 @@ let colored_message
   let just_message = T.sprintf [T.Foreground message_color] "%s" str in
   if with_time then just_time ^ just_message else just_message
 
-let error_with_color msg = colored_message ~time_color:T.White ~message_color:T.Red msg
+let error_with_color msg =
+  colored_message ~time_color:T.White ~message_color:T.Red msg
 
 let log_info_bad ?exn msg = match !current_platform with
   | Darwin -> error_with_color msg |> Lwt_log.info ?exn
@@ -35,7 +36,8 @@ let log_info_bad ?exn msg = match !current_platform with
 
 let log_info_success msg = match !current_platform with
   | Darwin ->
-    colored_message ~time_color:T.White ~message_color:T.Yellow msg |> Lwt_log.info
+    colored_message ~time_color:T.White ~message_color:T.Yellow msg
+    |> Lwt_log.info
   | Linux -> msg |> Lwt_log.info
 
 let ( >> ) x y = x >>= fun () -> y
@@ -54,12 +56,15 @@ let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog 
         prog
         (match exn_handler with Some f -> f | None -> Unix.(function
              | Unix_error (_, name, _) ->
-               log_info_bad (P.sprintf "Attempt %d, %s failed" (current_count + 1) name) >>
-               Lwt_unix.sleep wait_between_failure >>= do_start (current_count + 1)
+               log_info_bad
+                 (P.sprintf "Attempt %d, %s failed" (current_count + 1) name) >>
+               Lwt_unix.sleep wait_between_failure >>=
+               do_start (current_count + 1)
              | Lwt.Canceled -> Lwt.return_unit
              | exn ->
                log_info_bad ~exn (P.sprintf "Attempt %d" (current_count + 1)) >>
-               Lwt_unix.sleep wait_between_failure >>= do_start (current_count + 1)
+               Lwt_unix.sleep wait_between_failure >>=
+               do_start (current_count + 1)
            ))
     end
   in
@@ -116,13 +121,17 @@ module Protocol = struct
       Lwt_io.LE.read_int32 ic >>= fun raw_version ->
       Lwt_io.LE.read_int32 ic >>= fun raw_request ->
       Lwt_io.LE.read_int32 ic >|= fun raw_tag ->
-      Int32.(to_int raw_count, to_int raw_version, to_int raw_request, to_int raw_tag)
+      Int32.(to_int raw_count,
+             to_int raw_version,
+             to_int raw_request,
+             to_int raw_tag)
     end
 
   (** Highly advised to only change value of version of default values *)
   let write_header ?(version=Plist) ?(request=8) ?(tag=1) ~total_len o_chan =
     o_chan |> Lwt_io.atomic begin fun oc ->
-      (List.map Int32.of_int [total_len; if version = Plist then 1 else 0; request; tag])
+      ([total_len; if version = Plist then 1 else 0; request; tag]
+       |>List.map Int32.of_int )
       |> Lwt_list.iter_s (Lwt_io.LE.write_int32 oc)
     end
 
@@ -151,7 +160,8 @@ module Protocol = struct
       Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
         (* Send the header for our listen message *)
         write_header ~total_len:listen_msg_len mux_oc >>
-        Lwt_io.write_from_string_exactly mux_oc listen_message 0 (String.length listen_message) >>
+        ((String.length listen_message)
+         |> Lwt_io.write_from_string_exactly mux_oc listen_message 0) >>
         read_header mux_ic >>= fun (msg_len, _, _, _) ->
         let buffer = Bytes.create (msg_len - header_length) in
 
@@ -167,7 +177,6 @@ module Protocol = struct
         match event_cb with
         | None -> start_listening ()
         | Some g -> g (parse_reply buffer) >>= start_listening
-
       end
     end
 
@@ -203,7 +212,8 @@ module Relay = struct
         | '#' -> accum
         | _ ->
           match Stringext.split line ~on:':' with
-          | udid :: port_number :: [] -> (udid, int_of_string port_number) :: accum
+          | udid :: port_number :: [] ->
+            (udid, int_of_string port_number) :: accum
           | _ -> assert false
       end []
     in
@@ -213,11 +223,12 @@ module Relay = struct
 
   let do_tunnel (port, device_id, udid) =
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
-    let server = Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
-        Lwt_io.with_connection Protocol.usbmuxd_address begin fun (mux_ic, mux_oc) ->
+    let open Protocol in
+    let server =
+      Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
+        Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
           (* Hard coded to assume ssh at the moment *)
-          let msg = Protocol.connect_message ~device_id ~device_port:22 in
-          let open Protocol in
+          let msg = connect_message ~device_id ~device_port:22 in
           write_header ~total_len:(msg_length msg) mux_oc >>
           Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
           (* Read the reply, should be good to start just raw piping *)
@@ -265,8 +276,7 @@ module Relay = struct
       Unix.Unix_error(Unix.EPERM, _, _) ->
       (match action with Reload -> "Couldn't reload mapping, permissions error"
                        | Shutdown -> "Couldn't shutdown cleanly, permissions error")
-      |> error_with_color
-      |> prerr_endline;
+      |> error_with_color |> prerr_endline;
       exit 3
     | Unix.Unix_error(Unix.ESRCH, _, _) ->
       error_with_color
@@ -278,7 +288,9 @@ module Relay = struct
   let create_pid_file () =
     Unix.(
       try
-        let open_pid_file = openfile pid_file [O_RDWR; O_CREAT; O_CLOEXEC] 0o666 in
+        let open_pid_file =
+          openfile pid_file [O_RDWR; O_CREAT; O_CLOEXEC] 0o666
+        in
         let current_pid = getpid () |> string_of_int in
         write open_pid_file current_pid 0 (String.length current_pid) |> ignore;
         close open_pid_file
@@ -343,11 +355,12 @@ module Relay = struct
       Lwt_io.establish_server stat_addr begin fun (reply, response) ->
         (Lwt_io.read_line reply >>= function
             "GET / HTTP/1.1" ->
-            let as_json = (`List (devs |> List.map begin fun (port, device_id, udid) ->
-                (`Assoc [("Port", `Int port);
-                         ("DeviceID", `Int device_id);
-                         ("UDID", `String udid)] : B.json)
-              end)) |> B.to_string
+            let as_json =
+              `List (devs |> List.map begin fun (port, device_id, udid) ->
+                  (`Assoc [("Port", `Int port);
+                           ("DeviceID", `Int device_id);
+                           ("UDID", `String udid)] : B.json)
+                end) |> B.to_string
             in
             let msg = P.sprintf
                 "HTTP/1.1 200 OK\r\n\
@@ -379,7 +392,7 @@ module Relay = struct
       else device_map;
 
     (* Setup the signal handlers, needed so that we know when to
-       reload *)
+       reload, shutdown, etc. *)
     handle_signals max_retries;
 
     platform () >>= fun plat ->
@@ -394,16 +407,17 @@ module Relay = struct
         (* We do this because usbmuxd itself assigns device IDs and we
            need to begin the listen message, then find out the device IDs
            that usbmuxd has assigned per UDID, hence the timeout. *)
-        Lwt.pick [Lwt_unix.timeout 1.0;
-                  Protocol.(create_listener ~max_retries ~event_cb:begin function
-                      | Protocol.Event Attached { serial_number = s; connection_speed = _;
-                                                  connection_type = _; product_id = _;
-                                                  location_id = _; device_id = d; } ->
-                        Hashtbl.add devices d s |> Lwt.return
-                      | Protocol.Event Detached d ->
-                        Hashtbl.remove devices d |> Lwt.return
-                      | _ -> Lwt.return_unit
-                    end)]
+        Lwt.pick
+          [Lwt_unix.timeout 1.0;
+           Protocol.(create_listener ~max_retries ~event_cb:begin function
+               | Protocol.Event Attached { serial_number = s; connection_speed = _;
+                                           connection_type = _; product_id = _;
+                                           location_id = _; device_id = d; } ->
+                 Hashtbl.add devices d s |> Lwt.return
+               | Protocol.Event Detached d ->
+                 Hashtbl.remove devices d |> Lwt.return
+               | _ -> Lwt.return_unit
+             end)]
       with
         Lwt_unix.Timeout ->
         if do_daemonize then begin
@@ -414,7 +428,8 @@ module Relay = struct
         (* Asynchronously create concurrently the relay tunnels *)
         Lwt.async begin fun () ->
           start_status_server ~device_mapping ~devices <&>
-          Lwt_list.iter_p do_tunnel (device_list_of_hashtable ~device_mapping ~devices)
+          ((device_list_of_hashtable ~device_mapping ~devices)
+           |> Lwt_list.iter_p do_tunnel)
         end;
         fst (Lwt.wait ())
     end
@@ -426,17 +441,20 @@ module Relay = struct
       (* Stop the running threads, call begin_relay again *)
       Sys.(signal sigusr1 (Signal_handle begin fun _ ->
           complete_shutdown ();
-          log_info_success "Restarting relay with reloaded mappings" |> Lwt.ignore_result;
+          log_info_success "Restarting relay with reloaded mappings"
+          |> Lwt.ignore_result;
           (* Spin it up again *)
-          begin_relay ~device_map:!mapping_file ~max_retries false |> Lwt.ignore_result
+          begin_relay ~device_map:!mapping_file ~max_retries false
+          |> Lwt.ignore_result
         end));
       (* Shutdown the servers, relays then exit *)
       Sys.(signal sigusr2 (Signal_handle begin fun _ ->
           let relay_count = List.length !running_servers in
           complete_shutdown ();
-          log_info_success (P.sprintf "Shutdown %d relays, exiting now" relay_count)
+          (P.sprintf "Shutdown %d relays, exiting now" relay_count)
+          |> log_info_success
           |> Lwt.ignore_result;
-          exit 0;
+          exit 0
         end));
       (* Handle plain kill from command line *)
       Sys.(signal sigterm (Signal_handle (fun _ -> complete_shutdown ())))
