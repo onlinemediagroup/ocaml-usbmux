@@ -417,11 +417,11 @@ module Relay = struct
         Lwt.pick
           [Lwt_unix.timeout 1.0;
            Protocol.(create_listener ~max_retries ~event_cb:begin function
-               | Protocol.Event Attached { serial_number = s; connection_speed = _;
-                                           connection_type = _; product_id = _;
-                                           location_id = _; device_id = d; } ->
+               | Event Attached { serial_number = s; connection_speed = _;
+                                  connection_type = _; product_id = _;
+                                  location_id = _; device_id = d; } ->
                  Hashtbl.add devices d s |> Lwt.return
-               | Protocol.Event Detached d ->
+               | Event Detached d ->
                  Hashtbl.remove devices d |> Lwt.return
                | _ -> Lwt.return_unit
              end)]
@@ -446,11 +446,17 @@ module Relay = struct
     end
 
   and do_restart max_retries =
-    complete_shutdown ();
-    log_info_success "Restarting relay with reloaded mappings"
-    |> Lwt.ignore_result;
-    (* Spin it up again *)
-    begin_relay ~device_map:!mapping_file ~max_retries false
+    (if Sys.file_exists !mapping_file then begin
+        complete_shutdown ();
+        log_info_success "Restarting relay with reloaded mappings"
+        |> Lwt.ignore_result;
+        (* Spin it up again *)
+        begin_relay ~device_map:!mapping_file ~max_retries false
+      end else begin
+       P.sprintf "Original mapping file %s does not exist \
+                  anymore, not reloading" !mapping_file
+       |> log_info_bad
+     end)
     |> Lwt.ignore_result
 
   (* Mutually recursive function, handle_signals needs name of
