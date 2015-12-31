@@ -1,3 +1,3 @@
 #!bin/sh
 
-cp gandalf.1 $(opam config var man)/man1
+./main.native --help=groff > $(opam config var man)/man1/gandalf.1
