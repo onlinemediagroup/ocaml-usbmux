@@ -15,6 +15,7 @@ remove: [
   ["ocaml" "%{etc}%/usbmux/_oasis_remove_.ml" "%{etc}%/usbmux"]
 ]
 build-test: [
+  ["oasis" "setup"]
   ["ocaml" "setup.ml" "-configure" "--enable-tests"]
   ["ocaml" "setup.ml" "-build"]
   ["ocaml" "setup.ml" "-test"]
