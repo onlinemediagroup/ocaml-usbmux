@@ -360,7 +360,10 @@ module Relay = struct
       end
     in
     (* Register this server as well *)
-    running_servers := stat_server :: !running_servers;
+    (fun () ->
+       (running_servers := stat_server :: !running_servers) |> Lwt.return
+    )|>
+    Lwt_mutex.with_lock relay_lock >>= fun () ->
 
     (* Create another listener thread for updates to the devices
        listing, needed as device plugs in and out *)
