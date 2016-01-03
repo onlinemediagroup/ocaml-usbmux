@@ -1,0 +1,45 @@
+# OASIS_START
+# DO NOT EDIT (digest: 6a5decbc9d465f5a4630b90c3e510fea)
+# Ignore VCS directories, you can use the same kind of rule outside
+# OASIS_START/STOP if you want to exclude directories that contains
+# useless stuff for the build process
+true: annot, bin_annot
+<**/.svn>: -traverse
+<**/.svn>: not_hygienic
+".bzr": -traverse
+".bzr": not_hygienic
+".hg": -traverse
+".hg": not_hygienic
+".git": -traverse
+".git": not_hygienic
+"_darcs": -traverse
+"_darcs": not_hygienic
+# Library usbmux
+"src/lib/usbmux.cmxs": use_usbmux
+<src/lib/*.ml{,i,y}>: pkg_ANSITerminal
+<src/lib/*.ml{,i,y}>: pkg_cohttp.lwt
+<src/lib/*.ml{,i,y}>: pkg_lwt.ppx
+<src/lib/*.ml{,i,y}>: pkg_lwt.unix
+<src/lib/*.ml{,i,y}>: pkg_plist
+<src/lib/*.ml{,i,y}>: pkg_stringext
+<src/lib/*.ml{,i,y}>: pkg_yojson
+# Executable gandalf
+"src/app/main.native": pkg_ANSITerminal
+"src/app/main.native": pkg_cmdliner
+"src/app/main.native": pkg_cohttp.lwt
+"src/app/main.native": pkg_lwt.ppx
+"src/app/main.native": pkg_lwt.unix
+"src/app/main.native": pkg_plist
+"src/app/main.native": pkg_stringext
+"src/app/main.native": pkg_yojson
+"src/app/main.native": use_usbmux
+<src/app/*.ml{,i,y}>: pkg_ANSITerminal
+<src/app/*.ml{,i,y}>: pkg_cmdliner
+<src/app/*.ml{,i,y}>: pkg_cohttp.lwt
+<src/app/*.ml{,i,y}>: pkg_lwt.ppx
+<src/app/*.ml{,i,y}>: pkg_lwt.unix
+<src/app/*.ml{,i,y}>: pkg_plist
+<src/app/*.ml{,i,y}>: pkg_stringext
+<src/app/*.ml{,i,y}>: pkg_yojson
+<src/app/*.ml{,i,y}>: use_usbmux
+# OASIS_STOP

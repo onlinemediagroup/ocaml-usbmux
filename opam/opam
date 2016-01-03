@@ -11,22 +11,20 @@ build: [
   ["ocaml" "setup.ml" "-build"]
 ]
 install: ["ocaml" "setup.ml" "-install"]
+available: [ ocaml-version >= "4.02.3" ]
 remove: [
   ["ocaml" "%{etc}%/usbmux/_oasis_remove_.ml" "%{etc}%/usbmux"]
 ]
 build-test: [
-  ["oasis" "setup"]
   ["ocaml" "setup.ml" "-configure" "--enable-tests"]
   ["ocaml" "setup.ml" "-build"]
   ["ocaml" "setup.ml" "-test"]
 ]
-available:[ocaml-version >= "4.02.3"]
 depends: [
   "ANSITerminal"
-  "cmdliner" { build }
-  "oasis" { build }
-  "lwt" { >= "2.5.1" }
+  "cmdliner" {build}
   "cohttp"
+  "lwt" {>= "2.5.1"}
   "ocamlfind" {build}
   "plist"
   "stringext"
