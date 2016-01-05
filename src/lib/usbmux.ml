@@ -197,7 +197,7 @@ module Relay = struct
 
   let pid_file = "/var/run/gandalf.pid"
 
-  let status_server_query = Uri.of_string "http://localhost:5000"
+  let status_server_addr = Unix.(ADDR_INET(inet_addr_loopback, 5000))
 
   let gandalf_pid () =
     let open_pid_file = open_in pid_file in
@@ -332,31 +332,18 @@ module Relay = struct
       devices []
 
   let start_status_server ~device_mapping ~devices =
-    let stat_addr = Unix.(ADDR_INET(inet_addr_loopback, 5000)) in
-
     let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
 
     let stat_server =
-      Lwt_io.establish_server stat_addr begin fun (reply, response) ->
-        (Lwt_io.read_line reply >>= function
-            "GET / HTTP/1.1" ->
-            let as_json =
-              `List (!device_list |> List.map begin fun (port, device_id, udid) ->
-                  (`Assoc [("Port", `Int port);
-                           ("DeviceID", `Int device_id);
-                           ("UDID", `String udid)] : B.json)
-                end) |> B.to_string
-            in
-            let msg = P.sprintf
-                "HTTP/1.1 200 OK\r\n\
-                 Connection: Closed\r\n\
-                 Content-Length:%d\r\n\r\n\
-                 %s"
-                (String.length as_json)
-                as_json
-            in
-            Lwt_io.write_from_string_exactly response msg 0 (String.length msg)
-          | _ -> Lwt.return_unit)
+      Lwt_io.establish_server status_server_addr begin fun (_, response) ->
+        let as_json =
+          `List (!device_list |> List.map begin fun (port, device_id, udid) ->
+              (`Assoc [("Port", `Int port);
+                       ("DeviceID", `Int device_id);
+                       ("UDID", `String udid)] : B.json)
+            end) |> B.to_string
+        in
+        Lwt_io.write_line response (P.sprintf "%s\n" as_json)
         |> Lwt.ignore_result
       end
     in
