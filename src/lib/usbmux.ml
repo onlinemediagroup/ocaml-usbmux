@@ -1,4 +1,5 @@
 open Lwt.Infix
+
 module T = ANSITerminal
 module B = Yojson.Basic
 module U = Yojson.Basic.Util
@@ -385,9 +386,8 @@ module Relay = struct
             device_list := device_list_of_hashtable ~device_mapping ~devices
           | _ -> Lwt.return_unit
         end)
-    end;
-
-    fst (Lwt.wait ())
+    end
+    |> Lwt.return
 
   let rec begin_relay ~device_map ~max_retries do_daemonize =
     (* Ask for larger internal buffers for Lwt_io function rather than
@@ -440,7 +440,7 @@ module Relay = struct
            status server *)
         Lwt.async begin fun () ->
           (* Create, start a simple HTTP status server *)
-          start_status_server ~device_mapping ~devices <&>
+          start_status_server ~device_mapping ~devices >>
           (* Create, start the tunnels *)
           ((device_list_of_hashtable ~device_mapping ~devices)
            |> Lwt_list.iter_p do_tunnel)
