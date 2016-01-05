@@ -40,14 +40,16 @@ let show_status () =
 
       Lwt_io.with_connection Usbmux.Relay.status_server_addr begin fun (ic, _) ->
         Lwt_io.read_line ic >>= fun s ->
-        Printf.sprintf "%s\n%s"
-          ("Current actively tunneled devices, \
+        let as_json = Yojson.Basic.from_string s in
+        Printf.sprintf "%d %s\n%s"
+          (Yojson.Basic.Util.to_list as_json |> List.length)
+          ("current actively tunneled devices, \
             ssh into them with the port numbers printed below.\n\
             Example:" |> colorize ~message_color:Usbmux.T.White)
           ("\tssh root@localhost -p <some_port>"
            |> colorize ~message_color:Usbmux.T.Cyan)
         |> Lwt_io.printl >>= fun () ->
-        Yojson.Basic.(from_string s |> pretty_to_string) |> Lwt_io.printl
+        Yojson.Basic.pretty_to_string as_json |> Lwt_io.printl
       end
 
     with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
