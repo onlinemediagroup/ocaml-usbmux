@@ -40,21 +40,15 @@ let show_status () =
   let colorize = Usbmux.colored_message ~with_time:false in
   Lwt_main.run begin
     try%lwt
-
-      Lwt_io.with_connection R.status_server_addr begin fun (ic, _) ->
-        Lwt_io.read_line ic >>= fun s ->
-        let as_json = Yojson.Basic.from_string s in
-        Printf.sprintf "%d %s\n%s"
-          (Yojson.Basic.Util.to_list as_json |> List.length)
-          ("current actively tunneled devices, \
-            ssh into them with the port numbers printed below.\n\
-            Example:" |> colorize ~message_color:Usbmux.T.White)
-          ("\tssh root@localhost -p <some_port>"
-           |> colorize ~message_color:Usbmux.T.Cyan)
-        |> Lwt_io.printl >>= fun () ->
-        Yojson.Basic.pretty_to_string as_json |> Lwt_io.printl
-      end
-
+      R.status () >>= fun as_json ->
+      Printf.sprintf "%d %s\n%s"
+        (Yojson.Basic.Util.to_list as_json |> List.length)
+        ("devices are tunneled, ssh into them with the port numbers printed \
+          below.\nExample:" |> colorize ~message_color:Usbmux.T.White)
+        ("\tssh root@localhost -p <some_port>"
+         |> colorize ~message_color:Usbmux.T.Cyan)
+      |> Lwt_io.printl >>= fun () ->
+      Yojson.Basic.pretty_to_string as_json |> Lwt_io.printl
     with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
       Usbmux.error_with_color "Couldn't get status, check if relay is running"
       |> Lwt_io.printl

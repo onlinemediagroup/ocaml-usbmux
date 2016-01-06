@@ -496,4 +496,8 @@ module Relay = struct
         exit 5
     )
 
+  let status () =
+    (fun (ic, _) -> Lwt_io.read_line ic >|= Yojson.Basic.from_string)
+    |> Lwt_io.with_connection status_server_addr
+
 end

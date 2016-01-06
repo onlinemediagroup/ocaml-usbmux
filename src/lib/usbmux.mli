@@ -67,13 +67,14 @@ module Relay : sig
   (** Actions that can be performed on running relays *)
   type action = Shutdown | Reload
 
-  val status_server_addr : Unix.sockaddr
-
   (** Create a relay with option to daemonize. *)
   val begin_relay :
     device_map:Lwt_io.file_name -> max_retries:int -> bool -> unit Lwt.t
 
   (** Perform an action on a relay *)
   val perform : action -> unit
+
+  (** Get JSON that that describes the currently tunneled devices *)
+  val status : unit -> Yojson.Basic.json Lwt.t
 
 end
