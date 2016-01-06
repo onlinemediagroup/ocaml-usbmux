@@ -11,10 +11,6 @@ val colored_message :
 (** Default coloring for a error string *)
 val error_with_color : string -> string
 
-val log_info_bad : ?exn:exn -> string -> unit Lwt.t
-
-val log_info_success : string -> unit Lwt.t
-
 (** Get the current platform *)
 val platform : unit -> platform Lwt.t
 
@@ -61,7 +57,7 @@ module Protocol : sig
 
 end
 
-(** Provides functions to create and manipulate tunnedled relays *)
+(** Provides functions to create and manipulate tunneled relays *)
 module Relay : sig
 
   (** Actions that can be performed on running relays *)
