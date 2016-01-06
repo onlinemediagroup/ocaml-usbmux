@@ -1,6 +1,9 @@
 open Lwt.Infix
 open Cmdliner
 
+module P = Usbmux.Protocol
+module R = Usbmux.Relay
+
 let be_verbose =
   let doc = "Output Debugging Info" in
   Arg.(value & flag & info ["v";"verbose"] ~doc)
@@ -38,7 +41,7 @@ let show_status () =
   Lwt_main.run begin
     try%lwt
 
-      Lwt_io.with_connection Usbmux.Relay.status_server_addr begin fun (ic, _) ->
+      Lwt_io.with_connection R.status_server_addr begin fun (ic, _) ->
         Lwt_io.read_line ic >>= fun s ->
         let as_json = Yojson.Basic.from_string s in
         Printf.sprintf "%d %s\n%s"
@@ -67,8 +70,6 @@ let begin_program
     do_reload_mapping
     do_status
     do_exit =
-  let module P = Usbmux.Protocol in
-  let module R = Usbmux.Relay in
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
