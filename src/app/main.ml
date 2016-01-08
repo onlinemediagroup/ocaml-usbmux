@@ -36,24 +36,48 @@ let status =
   let doc = "Pretty print json of currently tunneled devices" in
   Arg.(value & flag & info ["s";"status"] ~doc)
 
+(* Ripped from cmdliner *)
+let find_cmd cmds =
+  let test, null = match Sys.os_type with
+    | "Win32" -> "where", " NUL"
+    | _ -> "type", "/dev/null"
+  in
+  let cmd c = Sys.command (Printf.sprintf "%s %s 1>%s 2>%s" test c null null) = 0 in
+  try Some (List.find cmd cmds) with Not_found -> None
+
 let show_status () =
+  (* Ripped from cmdliner *)
+  let pager =
+    let cmds = ["less"; "more"] in
+    let cmds = try (Sys.getenv "PAGER") :: cmds with Not_found -> cmds in
+    let cmds = try (Sys.getenv "MANPAGER") :: cmds with Not_found -> cmds in
+    find_cmd cmds
+  in
   let colorize = Usbmux.colored_message ~with_time:false in
   Lwt_main.run begin
     try%lwt
       R.status () >>= fun as_json ->
-      Printf.sprintf "%d %s\n%s"
-        (Yojson.Basic.Util.to_list as_json |> List.length)
-        ("devices are tunneled, ssh into them with the port numbers printed \
-          below.\nExample:" |> colorize ~message_color:Usbmux.T.White)
-        ("\tssh root@localhost -p <some_port>"
-         |> colorize ~message_color:Usbmux.T.Cyan)
-      |> Lwt_io.printl >>= fun () ->
-      Yojson.Basic.pretty_to_string as_json |> Lwt_io.printl
+      let msg =
+        Printf.sprintf "%d %s\n%s\n%s"
+          (Yojson.Basic.Util.to_list as_json |> List.length)
+          ("devices are tunneled, ssh into them with the port numbers printed \
+            below.\nExample:" |> colorize ~message_color:Usbmux.T.White)
+          ("\tssh root@localhost -p <some_port>"
+           |> colorize ~message_color:Usbmux.T.Cyan)
+          (Yojson.Basic.pretty_to_string as_json)
+      in
+      match pager with
+      | None -> Lwt_io.printl msg
+      | Some p ->
+        let f_name = Filename.temp_file "gandalf" "status" in
+        (fun oc -> Lwt_io.write_from_string_exactly oc msg 0 (String.length msg))
+        |> Lwt_io.with_file ~mode:Lwt_io.Output f_name >>= fun () ->
+        Sys.command (Printf.sprintf "%s %s" p f_name) |> ignore;
+        Lwt_unix.unlink f_name
     with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
       Usbmux.error_with_color "Couldn't get status, check if relay is running"
       |> Lwt_io.printl
   end;
-
   exit 0
 
 let begin_program
