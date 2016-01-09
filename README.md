@@ -19,17 +19,24 @@ managers are old.
 
 You need to have opam installed, it is OCaml's package manager.
 
-Once you have opam on your system clone this repository and do: 
+On `OS X` you can do:
 
 ```shell
-$ opam pin add usbmux . -y
+$ brew install opam
 ```
 
-Soon I will have this on `opam` itself, so you'll be able to do: 
-`opam install usbmux`
+(If on Linux, then get opam via your package manager, aka apt-get or
+whatever). It is important that your compiler is up to date, you can
+check with `opam switch`, make sure its at least >= 4.02.0
 
-This should install both the command line tool gandalf and the usbmux
-OCaml library.
+then
+
+```shell
+$ opam install usbmux
+```
+
+This will install the command line tool `gandalf` and an OCaml
+library.
 
 # gandalf usage.
 
