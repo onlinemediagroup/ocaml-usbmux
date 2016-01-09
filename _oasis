@@ -1,12 +1,12 @@
 # -*- conf -*-
 OASISFormat: 0.4
 Name:        usbmux
-Version:     0.2
+Version:     0.3
 Synopsis:    Control port remapping for iOS devices
 Authors:     Edgar Aroutiounian <edgar.factorial@gmail.com>
 Maintainers: Edgar Aroutiounian <edgar.factorial@gmail.com>
 Homepage:    https://github.com/onlinemediagroup/ocaml-usbmux
-License:     Prop
+License:     BSD-3
 Plugins:     META (0.4), DevFiles (0.4)
 BuildTools: ocamlbuild
 

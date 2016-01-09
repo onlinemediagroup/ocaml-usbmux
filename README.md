@@ -25,6 +25,9 @@ Once you have opam on your system clone this repository and do:
 $ opam pin add usbmux . -y
 ```
 
+Soon I will have this on `opam` itself, so you'll be able to do: 
+`opam install usbmux`
+
 This should install both the command line tool gandalf and the usbmux
 OCaml library.
 
@@ -87,3 +90,30 @@ or
 ```shell
 $ man gandalf
 ```
+
+Simple invocation:
+
+```shell
+$ sudo `which gandalf` --mappings etc/mapping --daemonize --verbose
+```
+
+# Important Notes and Catches
+
+1.  If you are running this on Linux, then you might get issues with
+    `usbmuxd` having issues when more than around 7 devices are plugged
+    in. This is because multiple threads are trying to call various
+    `libxml2` freeing functions. I have a forked version of `libplist`
+    that `usbmuxd` uses, sans the memory freeing calls. Its available
+    [here](https://github.com/onlinemediagroup/libplist). Compile and install that, then compile and install `usbmuxd`
+    from source. This will leak memory but its not that much at all and
+    I believe it to be a fixed amount.
+
+2.  Another issue you might have is USB3.0. The Linux kernel might crap
+    out on you after 13 devices. This is a combination of the kernel
+    not giving enough resources and the host controller on your
+    motherboard being crappy. The solution to this problem is to
+    disable USB3.0 in your BIOS. To verify that USB3.0 isn't working
+    check with `lsusb`
+
+For reference, this project is currently in use given these two issues
+and works fine with > 20 iPhones.
