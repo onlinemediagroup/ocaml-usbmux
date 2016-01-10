@@ -93,7 +93,16 @@ let begin_program
 
   if do_exit then R.(perform Shutdown);
 
-  if do_reload_mapping then R.(perform Reload);
+  begin
+    if do_reload_mapping then
+      try R.(perform Reload)
+      with Sys_error _ ->
+        (Usbmux.error_with_color
+           (Printf.sprintf "Could not open pid file, are you sure gandalf was \
+                            already running?")
+         |> prerr_endline;
+         exit 6)
+  end;
 
   if do_status then show_status ();
 

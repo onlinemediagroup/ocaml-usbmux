@@ -199,7 +199,7 @@ module Relay = struct
 
   let status_server_addr = Unix.(ADDR_INET(inet_addr_loopback, 5000))
 
-  let gandalf_pid () =
+  let relay_pid () =
     let open_pid_file = open_in pid_file in
     let target_pid = input_line open_pid_file |> int_of_string in
     close_in open_pid_file;
@@ -475,9 +475,9 @@ module Relay = struct
      original given mapping file. Or we just want to shutdown the
      servers and exit cleanly *)
   let perform action =
-    let target_pid = gandalf_pid () in
     Unix.(
       try
+        let target_pid = relay_pid () in
         Sys.(match action with Reload -> sigusr1 | Shutdown -> sigusr2)
         |> kill target_pid;
         exit 0
