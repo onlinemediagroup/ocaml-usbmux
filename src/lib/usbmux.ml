@@ -230,6 +230,7 @@ module Relay = struct
   let do_tunnel (port, device_id, udid) =
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
     let open Protocol in
+    let this_thread = fst (Lwt.task ()) in
     let server =
       Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
         Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
@@ -245,7 +246,13 @@ module Relay = struct
           | Result Success ->
             (P.sprintf "Tunneling. Udid: %s Port: %d \
                         Device_id: %d" udid port device_id)
-            |> log_info_success >> echo tcp_ic mux_oc <&> echo mux_ic tcp_oc
+            |> log_info_success >>
+            (* Provide the tunneling *)
+            echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
+            (Lwt.cancel this_thread |> Lwt.return) >>
+            ((P.sprintf "Finished Tunneling. Udid: %s Port: %d \
+                         Device_id: %d" udid port device_id)
+             |> log_info_success)
           | Result Device_requested_not_connected ->
             (P.sprintf "Tunneling: Device requested was not connected. \
                         Udid: %s Device_id: %d" udid device_id)
@@ -259,7 +266,6 @@ module Relay = struct
         |> Lwt.ignore_result
       end
     in
-    let this_thread = fst (Lwt.task ()) in
     Lwt_mutex.with_lock relay_lock begin fun () ->
       (* Register the thread *)
       running_relays := this_thread :: !running_relays;
@@ -423,9 +429,37 @@ module Relay = struct
           (* Might require super user permissions *)
           create_pid_file ()
         end;
-        (* Asynchronously create concurrently the relay tunnels and
-           status server *)
+
+        let do_watch_dead_tunnels () =
+          Lwt.async begin fun () ->
+            let rec forever () =
+              (* Do this every 5 minutes *)
+              Lwt_unix.sleep (60.0 *. 5.0) >> begin
+                Lwt_mutex.with_lock relay_lock begin fun () ->
+                  !running_relays |> Lwt_list.filter_p begin fun relay_thread ->
+                    (* If the tunnel is dead, then it is already canceled *)
+                    (match Lwt.state relay_thread with
+                    | Lwt.Sleep -> true
+                    | _ -> false) |> Lwt.return
+                  end >>= fun still_running ->
+                  (Printf.sprintf "Prunned %d tunnels"
+                     (List.length !running_relays - List.length still_running))
+                  |> log_info_success >|= fun () ->
+                  (* Mutate our ref with the known to still be open relays *)
+                  running_relays := still_running
+                end
+                >>= forever
+              end
+            in
+            forever ()
+          end
+        in
+
+        (* Asynchronously create concurrently the relay tunnels,
+           status server, and periodic purging of closed tunnels *)
         Lwt.async begin fun () ->
+          (* Periodically remove used up tunnels *)
+          do_watch_dead_tunnels ();
           (* Create, start a simple HTTP status server *)
           start_status_server ~device_mapping ~devices >>
           (* Create, start the tunnels *)
@@ -471,7 +505,7 @@ module Relay = struct
 
   (* We reload the mapping by sending a user defined signal to the
      current running daemon which will then cancel the running
-     threads, ie the servers and connections, and reload from the
+     threads, i.e. the servers and connections, and reload from the
      original given mapping file. Or we just want to shutdown the
      servers and exit cleanly *)
   let perform action =
