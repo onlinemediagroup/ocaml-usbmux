@@ -1,6 +1,6 @@
 opam-version: "1.2"
 name: "usbmux"
-version: "0.3"
+version: "0.4"
 maintainer: "Edgar Aroutiounian <edgar.factorial@gmail.com>"
 authors: [ "Edgar Aroutiounian <edgar.factorial@gmail.com>" ]
 license: "BSD-3"
@@ -12,7 +12,7 @@ build: [
   ["ocaml" "setup.ml" "-build"]
 ]
 install: ["ocaml" "setup.ml" "-install"]
-available: [ ocaml-version >= "4.02.3" ]
+available: [ ocaml-version >= "4.02.0" ]
 remove: [
   ["ocaml" "%{etc}%/usbmux/_oasis_remove_.ml" "%{etc}%/usbmux"]
 ]

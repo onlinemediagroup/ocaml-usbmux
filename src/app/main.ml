@@ -161,7 +161,7 @@ let top_level_info =
              `S "AUTHOR";
              `P "Edgar Aroutiounian"]
   in
-  Term.info "gandalf" ~version:"0.2" ~doc ~man
+  Term.info "gandalf" ~version:"0.4" ~doc ~man
 
 let () =
   match Term.eval (entry_point, top_level_info) with
