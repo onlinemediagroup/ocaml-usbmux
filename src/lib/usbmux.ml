@@ -57,9 +57,11 @@ let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog 
       Lwt.catch
         prog
         (match exn_handler with Some f -> f | None -> Unix.(function
-             | Unix_error (_, name, _) ->
+             | Unix_error _ as e ->
                log_info_bad
-                 (P.sprintf "Attempt %d, %s failed" (current_count + 1) name) >>
+                 (P.sprintf "Attempt %d, %s failed"
+                    (current_count + 1)
+                    (Printexc.to_string e)) >>
                Lwt_unix.sleep wait_between_failure >>=
                do_start (current_count + 1)
              | Lwt.Canceled -> Lwt.return_unit
@@ -328,7 +330,8 @@ module Relay = struct
                        ("UDID", `String udid)] : B.json)
             end) |> B.to_string
         in
-        Lwt_io.write_line response (P.sprintf "%s\n" as_json)
+        let msg = P.sprintf "%s\n" as_json in
+        Lwt_io.write_from_string_exactly response msg 0 (String.length msg)
         |> Lwt.ignore_result
       end
     in
