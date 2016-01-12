@@ -26,6 +26,12 @@ let retry_count =
   let doc = "How many times to retry action" in
   Arg.(value & opt int 3 & info ["t"; "tries"] ~doc)
 
+let tunneling_timeout =
+  let doc = "How many seconds $(b, $(tname)) will wait on \
+             inactivity on the tunnel before closing the tunnel"
+  in
+  Arg.(value & opt int (60 * 5) & info ["o";"timeout"] ~doc)
+
 let reload_mapping =
   let doc = "Stop running threads and reload the mappings \
              from the original mapping file path."
@@ -87,6 +93,7 @@ let begin_program
     max_retries
     do_reload_mapping
     do_status
+    tunnel_timeout
     do_exit =
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
@@ -117,7 +124,7 @@ let begin_program
         | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
         | _ -> Lwt.return ()
       end)
-  | Some device_map -> R.begin_relay ~device_map ~max_retries do_daemonize
+  | Some device_map -> R.begin_relay ~tunnel_timeout ~device_map ~max_retries do_daemonize
 
 let entry_point =
   Term.(pure
@@ -128,6 +135,7 @@ let entry_point =
         $ retry_count
         $ reload_mapping
         $ status
+        $ tunneling_timeout
         $ do_exit )
 
 let top_level_info =

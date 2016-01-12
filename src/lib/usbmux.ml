@@ -205,21 +205,26 @@ module Relay = struct
     close_in open_pid_file;
     target_pid
 
-  let timeout_task n =
+  let timeout_task ~after_timeout n =
     let t = fst (Lwt.task ()) in
-    let timeout = Lwt_timeout.create n (fun () -> Lwt.cancel t) in
+    let timeout =
+      Lwt_timeout.create n (fun () -> Lwt.cancel t; after_timeout ())
+    in
     Lwt_timeout.start timeout;
     Lwt.on_cancel t (fun () -> Lwt_timeout.stop timeout);
     t
 
-  let timeout_stream ~read_timeout stream =
-    (fun () -> Lwt.pick [Lwt_stream.get stream; timeout_task read_timeout])
+  let timeout_stream ~after_timeout ~read_timeout stream =
+    (fun () ->
+       Lwt.pick
+        [Lwt_stream.get stream; timeout_task ~after_timeout read_timeout])
     |> Lwt_stream.from
 
-  let echo ic oc =
-    (* If there is no activity on the stream for 5 minutes, then we
-       ought to close the connection *)
-    timeout_stream ~read_timeout:(60 * 5) (Lwt_io.read_chars ic)
+  let echo read_timeout ic oc =
+    let after_timeout () =
+      Lwt_io.close ic >> Lwt_io.close oc |> Lwt.ignore_result
+    in
+    timeout_stream ~after_timeout ~read_timeout (Lwt_io.read_chars ic)
     |> Lwt_io.write_chars oc
 
   let load_mappings file_name =
@@ -242,7 +247,7 @@ module Relay = struct
     prepped |> List.iter (fun (k, v) -> Hashtbl.add t k v);
     t
 
-  let do_tunnel (port, device_id, udid) =
+  let do_tunnel tunnel_timeout (port, device_id, udid) =
     let open Protocol in
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
     let server =
@@ -262,7 +267,7 @@ module Relay = struct
                         Device_id: %d" udid port device_id)
             |> log_info_success >>
             (* Provide the tunneling *)
-            echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
+            echo tunnel_timeout tcp_ic mux_oc <&> echo tunnel_timeout mux_ic tcp_oc >>
             ((P.sprintf "Finished Tunneling. Udid: %s Port: %d \
                          Device_id: %d" udid port device_id)
              |> log_info_success)
@@ -376,7 +381,7 @@ module Relay = struct
     end
     |> Lwt.return
 
-  let rec begin_relay ~device_map ~max_retries do_daemonize =
+  let rec begin_relay ~tunnel_timeout ~device_map ~max_retries do_daemonize =
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
@@ -390,7 +395,7 @@ module Relay = struct
 
     (* Setup the signal handlers, needed so that we know when to
        reload, shutdown, etc. *)
-    handle_signals max_retries;
+    handle_signals tunnel_timeout max_retries;
 
     platform () >>= fun plat ->
     (* Needed because Linux system log doesn't like the terminal
@@ -427,18 +432,18 @@ module Relay = struct
         start_status_server ~device_mapping ~devices >>
         (* Create, start the tunnels *)
         ((device_list_of_hashtable ~device_mapping ~devices)
-         |> Lwt_list.iter_p do_tunnel) >>
+         |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
         (* Wait forever *)
         fst (Lwt.wait ())
     end
 
-  and do_restart max_retries =
+  and do_restart tunnel_timeout max_retries =
     (if Sys.file_exists !mapping_file then begin
         complete_shutdown ();
         log_info_success "Restarting relay with reloaded mappings"
         |> Lwt.ignore_result;
         (* Spin it up again *)
-        begin_relay ~device_map:!mapping_file ~max_retries false
+        begin_relay ~tunnel_timeout ~device_map:!mapping_file ~max_retries false
       end else begin
        P.sprintf "Original mapping file %s does not exist \
                   anymore, not reloading" !mapping_file
@@ -448,11 +453,11 @@ module Relay = struct
 
   (* Mutually recursive function, handle_signals needs name of
      begin_relay and begin_relay needs the name handle_signals *)
-  and handle_signals max_retries =
+  and handle_signals tunnel_timeout max_retries =
     Sys.([ (* Broken SSH pipes shouldn't exit our program *)
         signal sigpipe Signal_ignore;
         (* Stop the running threads, call begin_relay again *)
-        signal sigusr1 (Signal_handle (fun _ -> do_restart max_retries));
+        signal sigusr1 (Signal_handle (fun _ -> do_restart tunnel_timeout max_retries));
         (* Shutdown the servers, relays then exit *)
         signal sigusr2 (Signal_handle begin fun _ ->
             let relay_count = List.length !running_servers in
