@@ -124,3 +124,9 @@ $ sudo `which gandalf` --mappings etc/mapping --daemonize --verbose
 
 For reference, this project is currently in use given these two issues
 and works fine with > 20 iPhones.
+
+# Acknowledgements
+
+1.  Much appreciation to MixRank for green lighting this project
+2.  Ivg, Edwin and others on #OCaml
+3.  Starting point ideas from irelay, an npm package.
