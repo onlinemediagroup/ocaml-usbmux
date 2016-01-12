@@ -205,7 +205,22 @@ module Relay = struct
     close_in open_pid_file;
     target_pid
 
-  let echo ic oc = Lwt_io.(write_chars oc (read_chars ic))
+  let timeout_task n =
+    let t = fst (Lwt.task ()) in
+    let timeout = Lwt_timeout.create n (fun () -> Lwt.cancel t) in
+    Lwt_timeout.start timeout;
+    Lwt.on_cancel t (fun () -> Lwt_timeout.stop timeout);
+    t
+
+  let timeout_stream ~read_timeout stream =
+    (fun () -> Lwt.pick [Lwt_stream.get stream; timeout_task read_timeout])
+    |> Lwt_stream.from
+
+  let echo ic oc =
+    (* If there is no activity on the stream for 5 minutes, then we
+       ought to close the connection *)
+    timeout_stream ~read_timeout:(60 * 5) (Lwt_io.read_chars ic)
+    |> Lwt_io.write_chars oc
 
   let load_mappings file_name =
     Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >|= fun all_names ->
@@ -294,6 +309,9 @@ module Relay = struct
 
   let () =
     Lwt.async_exception_hook := function
+      | Lwt.Canceled ->
+        (* TODO make this more informative *)
+        log_info_bad "A ssh connection timed out" |> Lwt.ignore_result
       | Unix.Unix_error(Unix.EADDRINUSE, _, _) ->
         error_with_color "Check if already running tunneling relay, probably are"
         |> prerr_endline;
@@ -321,7 +339,7 @@ module Relay = struct
 
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
-    let stat_server =
+    let _ =
       Lwt_io.establish_server status_server_addr begin fun (_, response) ->
         let as_json =
           `List (!device_list |> List.map begin fun (port, device_id, udid) ->
