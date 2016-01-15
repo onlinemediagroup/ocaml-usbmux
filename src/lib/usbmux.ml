@@ -191,6 +191,8 @@ module Relay = struct
 
   type action = Shutdown | Reload
 
+  exception Bad_mapping_file of string
+
   let relay_lock = Lwt_mutex.create ()
 
   let (running_servers, mapping_file) = ref [], ref ""
@@ -217,7 +219,7 @@ module Relay = struct
   let timeout_stream ~after_timeout ~read_timeout stream =
     (fun () ->
        Lwt.pick
-        [Lwt_stream.get stream; timeout_task ~after_timeout read_timeout])
+         [Lwt_stream.get stream; timeout_task ~after_timeout read_timeout])
     |> Lwt_stream.from
 
   let echo read_timeout ic oc =
@@ -236,25 +238,26 @@ module Relay = struct
           | '#' -> accum
           | _ ->
             match Stringext.split line ~on:':' with
-            | udid :: port_number :: [] ->
-              (udid, int_of_string port_number) :: accum
-            | _ -> assert false
+            | udid :: port_number :: port_forward :: [] ->
+              (udid, int_of_string port_number, int_of_string port_forward) :: accum
+            | _ ->
+              raise (Bad_mapping_file "Mapping file needs to be of the \
+                                       form udid:port_local:device_port")
         end
         else accum
       end []
     in
     let t = Hashtbl.create (List.length prepped) in
-    prepped |> List.iter (fun (k, v) -> Hashtbl.add t k v);
+    prepped |> List.iter (fun (k, v, p_forward) -> Hashtbl.add t k (v, p_forward));
     t
 
-  let do_tunnel tunnel_timeout (port, device_id, udid) =
+  let do_tunnel tunnel_timeout (port, device_port, device_id, udid) =
     let open Protocol in
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
     let server =
       Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
         Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
-          (* Hard coded to assume ssh at the moment *)
-          let msg = connect_message ~device_id ~device_port:22 in
+          let msg = connect_message ~device_id ~device_port in
           write_header ~total_len:(msg_length msg) mux_oc >>
           Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
           (* Read the reply, should be good to start just raw piping *)
@@ -263,21 +266,23 @@ module Relay = struct
           Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
           match parse_reply buffer with
           | Result Success ->
-            (P.sprintf "Tunneling. Udid: %s Port: %d \
-                        Device_id: %d" udid port device_id)
+            (P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
+                        Device_id: %d" udid port device_port device_id)
             |> log_info_success >>
-            (* Provide the tunneling *)
-            echo tunnel_timeout tcp_ic mux_oc <&> echo tunnel_timeout mux_ic tcp_oc >>
-            ((P.sprintf "Finished Tunneling. Udid: %s Port: %d \
-                         Device_id: %d" udid port device_id)
+            (* Provide the tunneling with a partial *)
+            let e = echo tunnel_timeout in
+            e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
+            ((P.sprintf "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+                         Device_id: %d" udid port device_port device_id)
              |> log_info_success)
           | Result Device_requested_not_connected ->
             (P.sprintf "Tunneling: Device requested was not connected. \
                         Udid: %s Device_id: %d" udid device_id)
             |> log_info_bad
           | Result Port_requested_not_available ->
-            (P.sprintf "Tunneling. Port requested wasn't available. \
-                        Udid: %s Port: %d Device_id: %d" udid port device_id)
+            (P.sprintf "Tunneling. Port requested, %d, wasn't available. \
+                        Udid: %s Port: %d Device_id: %d"
+               device_port udid port device_id)
             |> log_info_bad
           | _ -> Lwt.return_unit
         end
@@ -331,7 +336,9 @@ module Relay = struct
   let device_list_of_hashtable ~device_mapping ~devices =
     Hashtbl.fold begin fun device_id_key udid_value accum ->
       try
-        (Hashtbl.find device_mapping udid_value,
+        let (from_port, to_port) = Hashtbl.find device_mapping udid_value in
+        (from_port,
+         to_port,
          device_id_key,
          udid_value) :: accum
       with
@@ -347,8 +354,9 @@ module Relay = struct
     let _ =
       Lwt_io.establish_server status_server_addr begin fun (_, response) ->
         let as_json =
-          `List (!device_list |> List.map begin fun (port, device_id, udid) ->
-              (`Assoc [("Port", `Int port);
+          `List (!device_list |> List.map begin fun (from_port, to_port, device_id, udid) ->
+              (`Assoc [("Local Port", `Int from_port);
+                       ("Device Port Forwarded", `Int to_port);
                        ("DeviceID", `Int device_id);
                        ("UDID", `String udid)] : B.json)
             end) |> B.to_string
