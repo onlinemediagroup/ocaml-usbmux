@@ -52,8 +52,9 @@ arguments have long-forms as well and `-v` can be added at any time.
     This will start up `gandalf` in listen mode, that is it will print
     out whenever a device connects or disconnects.
 
-2.  Start with a mapping file which is of the form `<udid>:<port>`. The
-    `#` character starts comments
+2.  Start with a mapping file which is of the form
+    `<udid>:<local_port>:<device_port>`. The `#` character starts
+    comments
     
     ```shell
     $ gandalf -m mapping

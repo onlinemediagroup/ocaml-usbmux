@@ -10,7 +10,7 @@ let be_verbose =
 
 let forward_connection_file =
   let doc = "Simple file mapping udid to ports, expecting a file \
-             like 123gfdgefrgt234:2000"
+             like 123gfdgefrgt234:2000:22"
   in
   Arg.(value & opt (some non_dir_file) None & info ["m"; "mappings"] ~doc)
 
@@ -141,17 +141,20 @@ let entry_point =
 let top_level_info =
   let doc = "Control TCP forwarding for iDevices" in
   let man = [`S "DESCRIPTION";
-             `P "$(b, $(tname)) lets you ssh over USB to your jailbroken \
-                 iDevices like iPhone, iPad, iTouch. You need to have the \
-                 usbmuxd daemon running, on OS X this means you don't have \
-                 to do anything but on Linux you need to install and run it.";
+             `P "$(b, $(tname)) lets you port forward local ports to specific \
+                 ports on your jailbroken iDevices like iPhone, iPad, iTouch \
+                 over USB; think about the ssh use-case.  You need to \
+                 have the usbmuxd daemon running, on OS X this means you \
+                 don't have to do anything but on Linux you need to \
+                 install and run it.";
              `S "EXAMPLES";
              `P "1) See with realtime updates what devices are connected \
                  This will start up gandalf in listen mode, that is it \
                  will print out whenver a device connects or disconnects";
              `Pre "$(b, $(tname))";
              `P "2) Start with a mapping file which is of the form \
-                 <udid>:<port>, the # character starts comments.";
+                 <udid>:<local_port>:<device_port>, the # character \
+                 starts comments.";
              `Pre "$(b, $(tname)) -m mapping_file";
              `P "2.1) Daemonize $(b, $(tname)) with the -d flag. *NOTE*: You \
                  might need to end up doing that under sudo as $(b, $(tname)) \
@@ -166,6 +169,9 @@ let top_level_info =
              `P "5) Cleanly exit $(b, $(tname)), note this might require\
                  super user permissions.";
              `Pre "$(b, $(tname)) -e";
+             `S "GUIDELINE";
+             `P "Be sure to check your system log for valuable \
+                 debugging information, especially with -v";
              `S "AUTHOR";
              `P "Edgar Aroutiounian"]
   in
