@@ -1,7 +1,7 @@
 # -*- conf -*-
 OASISFormat: 0.4
 Name:        usbmux
-Version:     0.5
+Version:     0.6
 Synopsis:    Control port remapping for iOS devices
 Authors:     Edgar Aroutiounian <edgar.factorial@gmail.com>
 Maintainers: Edgar Aroutiounian <edgar.factorial@gmail.com>

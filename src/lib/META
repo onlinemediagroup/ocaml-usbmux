@@ -1,6 +1,6 @@
 # OASIS_START
-# DO NOT EDIT (digest: bd380ba125e372c707d400b8348deda1)
-version = "0.5"
+# DO NOT EDIT (digest: fbda09d185e7534b75a6ec0efe801e59)
+version = "0.6"
 description = "Control port remapping for iOS devices"
 requires = "lwt.unix lwt.ppx plist yojson ANSITerminal stringext cohttp.lwt"
 archive(byte) = "usbmux.cma"
