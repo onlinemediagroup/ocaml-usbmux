@@ -322,15 +322,19 @@ module Relay = struct
       | Lwt.Canceled ->
         (* TODO make this more informative *)
         log_info_bad "A ssh connection timed out" |> Lwt.ignore_result
+      | Unix.Unix_error(UnixLabels.ENOTCONN, _, _) as exn ->
+        log_info_bad ~exn "Some kind of socket connection closed prematurely"
+        |> Lwt.ignore_result
       | Unix.Unix_error(Unix.EADDRINUSE, _, _) ->
         error_with_color "Check if already running tunneling relay, probably are"
         |> prerr_endline;
         exit 6
-      | _ ->
+      | e ->
         error_with_color
-          "Please report, this is a bug: Unhandled async exception: "
+          (P.sprintf
+             "Please report, this is a bug: Unhandled async exception: %s"
+             (Printexc.to_string e))
         |> prerr_endline;
-        Printexc.print_backtrace stderr;
         exit 4
 
   let device_list_of_hashtable ~device_mapping ~devices =
