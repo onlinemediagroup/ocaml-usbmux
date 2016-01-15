@@ -360,9 +360,9 @@ module Relay = struct
         let as_json =
           `List (!device_list |> List.map begin fun (from_port, to_port, device_id, udid) ->
               (`Assoc [("Local Port", `Int from_port);
-                       ("Device Port Forwarded", `Int to_port);
-                       ("DeviceID", `Int device_id);
-                       ("UDID", `String udid)] : B.json)
+                       ("iDevice Port Forwarded", `Int to_port);
+                       ("Usbmuxd assigned iDevice ID", `Int device_id);
+                       ("iDevice UDID", `String udid)] : B.json)
             end) |> B.to_string
         in
         let msg = P.sprintf "%s\n" as_json in
@@ -461,7 +461,7 @@ module Relay = struct
         log_info_success "Restarting relay with reloaded mappings"
         |> Lwt.ignore_result;
         (* Spin it up again *)
-        begin_relay ~tunnel_timeout ~device_map:!mapping_file ~max_retries false
+        begin_relay ~stats_server:false ~tunnel_timeout ~device_map:!mapping_file ~max_retries false
       end else begin
        P.sprintf "Original mapping file %s does not exist \
                   anymore, not reloading" !mapping_file
