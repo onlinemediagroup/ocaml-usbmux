@@ -65,6 +65,7 @@ module Relay : sig
 
   (** Create a relay with option to daemonize. *)
   val begin_relay :
+    ?stats_server:bool ->
     tunnel_timeout:int ->
     device_map:Lwt_io.file_name -> max_retries:int -> bool -> unit Lwt.t
 

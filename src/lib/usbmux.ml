@@ -381,7 +381,12 @@ module Relay = struct
     end
     |> Lwt.return
 
-  let rec begin_relay ~tunnel_timeout ~device_map ~max_retries do_daemonize =
+  let rec begin_relay
+      ?(stats_server=true)
+      ~tunnel_timeout
+      ~device_map
+      ~max_retries
+      do_daemonize =
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
@@ -429,7 +434,8 @@ module Relay = struct
           create_pid_file ()
         end;
         (* Create, start a simple HTTP status server *)
-        start_status_server ~device_mapping ~devices >>
+        (if stats_server then start_status_server ~device_mapping ~devices
+         else Lwt.return_unit) >>
         (* Create, start the tunnels *)
         ((device_list_of_hashtable ~device_mapping ~devices)
          |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
@@ -468,7 +474,7 @@ module Relay = struct
             exit 0
           end);
         (* Handle plain kill from command line *)
-        signal sigterm (Signal_handle (fun _ -> complete_shutdown ()))
+        signal sigterm (Signal_handle (fun _ -> complete_shutdown (); exit 0))
       ]) |> List.iter ignore
 
   (* We reload the mapping by sending a user defined signal to the
