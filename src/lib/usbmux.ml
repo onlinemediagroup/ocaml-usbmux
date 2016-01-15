@@ -321,11 +321,11 @@ module Relay = struct
         error_with_color "Check if already running tunneling relay, probably are"
         |> prerr_endline;
         exit 6
-      | e ->
+      | _ ->
         error_with_color
-          (P.sprintf "Please report, this is a bug: \
-                      Unhandled async exception: %s" (Printexc.to_string e))
+          "Please report, this is a bug: Unhandled async exception: "
         |> prerr_endline;
+        Printexc.print_backtrace stderr;
         exit 4
 
   let device_list_of_hashtable ~device_mapping ~devices =
