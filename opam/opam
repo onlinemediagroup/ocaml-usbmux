@@ -1,6 +1,6 @@
 opam-version: "1.2"
 name: "usbmux"
-version: "0.7"
+version: "0.8"
 maintainer: "Edgar Aroutiounian <edgar.factorial@gmail.com>"
 authors: [ "Edgar Aroutiounian <edgar.factorial@gmail.com>" ]
 license: "BSD-3"

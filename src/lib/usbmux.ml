@@ -42,8 +42,6 @@ let log_info_success msg = match !current_platform with
     |> Lwt_log.info
   | Linux -> msg |> Lwt_log.info
 
-let ( >> ) x y = x >>= fun () -> y
-
 let platform () =
   Lwt_process.(pread_line (shell "uname") >|= platform_of_string)
 
@@ -347,10 +345,7 @@ module Relay = struct
     Hashtbl.fold begin fun device_id_key udid_value accum ->
       try
         let (from_port, to_port) = Hashtbl.find device_mapping udid_value in
-        (from_port,
-         to_port,
-         device_id_key,
-         udid_value) :: accum
+        (from_port, to_port, device_id_key, udid_value) :: accum
       with
         Not_found ->
         Lwt_log.ign_info_f
@@ -362,7 +357,7 @@ module Relay = struct
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
     let _ =
-      Lwt_io.establish_server status_server_addr begin fun (req, resp) ->
+      Lwt_io.establish_server status_server_addr begin fun (_, resp) ->
         let as_json =
           `List (!device_list |> List.map begin fun (from_port, to_port, device_id, udid) ->
               (`Assoc [("Local Port", `Int from_port);
@@ -371,9 +366,7 @@ module Relay = struct
                        ("iDevice UDID", `String udid)] : B.json)
             end) |> B.to_string
         in
-        let msg = P.sprintf "%s\n" as_json in
-        Lwt_io.write_from_string_exactly resp msg 0 (String.length msg) >>= close_chans (req, resp)
-        |> Lwt.ignore_result
+        P.sprintf "%s\n" as_json |> Lwt_io.write_line resp |> Lwt.ignore_result
       end
     in
     (* Create another listener thread for updates to the devices
