@@ -207,10 +207,16 @@ module Relay = struct
     close_in open_pid_file;
     target_pid
 
+  let close_chans (ic, oc) () =
+    Lwt_io.close ic >> Lwt_io.close oc
+
   let timeout_task ~after_timeout n =
     let t = fst (Lwt.task ()) in
     let timeout =
-      Lwt_timeout.create n (fun () -> Lwt.cancel t; after_timeout ())
+      Lwt_timeout.create n begin fun () ->
+        Lwt.cancel t;
+        after_timeout () |> Lwt.ignore_result
+      end
     in
     Lwt_timeout.start timeout;
     Lwt.on_cancel t (fun () -> Lwt_timeout.stop timeout);
@@ -223,10 +229,8 @@ module Relay = struct
     |> Lwt_stream.from
 
   let echo read_timeout ic oc =
-    let after_timeout () =
-      Lwt_io.close ic >> Lwt_io.close oc |> Lwt.ignore_result
-    in
-    timeout_stream ~after_timeout ~read_timeout (Lwt_io.read_chars ic)
+    Lwt_io.read_chars ic
+    |> timeout_stream ~after_timeout:(close_chans (ic, oc)) ~read_timeout
     |> Lwt_io.write_chars oc
 
   let load_mappings file_name =
@@ -286,6 +290,8 @@ module Relay = struct
             |> log_info_bad
           | _ -> Lwt.return_unit
         end
+        (* Finished tunneling, now cleanly close the chans *)
+        >>= close_chans (tcp_ic, tcp_oc)
         |> Lwt.ignore_result
       end
     in
@@ -356,7 +362,7 @@ module Relay = struct
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
     let _ =
-      Lwt_io.establish_server status_server_addr begin fun (_, response) ->
+      Lwt_io.establish_server status_server_addr begin fun (req, resp) ->
         let as_json =
           `List (!device_list |> List.map begin fun (from_port, to_port, device_id, udid) ->
               (`Assoc [("Local Port", `Int from_port);
@@ -366,7 +372,7 @@ module Relay = struct
             end) |> B.to_string
         in
         let msg = P.sprintf "%s\n" as_json in
-        Lwt_io.write_from_string_exactly response msg 0 (String.length msg)
+        Lwt_io.write_from_string_exactly resp msg 0 (String.length msg) >>= close_chans (req, resp)
         |> Lwt.ignore_result
       end
     in
