@@ -61,7 +61,7 @@ let show_status () =
   in
   let colorize = Usbmux.colored_message ~with_time:false in
   Lwt_main.run begin
-    try%lwt
+    (* try%lwt *)
       R.status () >>= fun as_json ->
       let msg =
         Printf.sprintf "%d %s\n%s\n%s"
@@ -80,9 +80,9 @@ let show_status () =
         |> Lwt_io.with_file ~mode:Lwt_io.Output f_name >>= fun () ->
         Sys.command (Printf.sprintf "%s %s" p f_name) |> ignore;
         Lwt_unix.unlink f_name
-    with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
-      Usbmux.error_with_color "Couldn't get status, check if relay is running"
-      |> Lwt_io.printl
+    (* with Unix.Unix_error(Unix.ECONNREFUSED, _, _) -> *)
+    (*   Usbmux.error_with_color "Couldn't get status, check if relay is running" *)
+    (*   |> Lwt_io.printl *)
   end;
   exit 0
 

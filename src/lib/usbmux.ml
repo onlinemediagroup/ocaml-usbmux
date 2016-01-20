@@ -197,7 +197,7 @@ module Relay = struct
 
   let pid_file = "/var/run/gandalf.pid"
 
-  let status_server_addr = Unix.(ADDR_INET(inet_addr_loopback, 5000))
+  let status_server = Uri.of_string "http://127.0.0.1:5000"
 
   let relay_pid () =
     let open_pid_file = open_in pid_file in
@@ -356,9 +356,8 @@ module Relay = struct
 
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
-    let _ =
-      Lwt_io.establish_server status_server_addr begin fun (_, resp) ->
-        let as_json =
+    let callback _ _ _ =
+        let body =
           `List (!device_list |> List.map begin fun (from_port, to_port, device_id, udid) ->
               (`Assoc [("Local Port", `Int from_port);
                        ("iDevice Port Forwarded", `Int to_port);
@@ -366,9 +365,10 @@ module Relay = struct
                        ("iDevice UDID", `String udid)] : B.json)
             end) |> B.to_string
         in
-        P.sprintf "%s\n" as_json |> Lwt_io.write_line resp |> Lwt.ignore_result
-      end
+        Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body ()
     in
+    let server = Cohttp_lwt_unix.Server.make ~callback () in
+
     (* Create another listener thread for updates to the devices
        listing, needed as device plugs in and out *)
     Lwt.async begin fun () ->
@@ -389,8 +389,10 @@ module Relay = struct
             device_list := device_list_of_hashtable ~device_mapping ~devices
           | _ -> Lwt.return_unit
         end)
+    end;
+    Lwt.async begin fun () ->
+      Cohttp_lwt_unix.Server.create ~mode:(`TCP (`Port 5000)) server
     end
-    |> Lwt.return
 
   let rec begin_relay
       ?(stats_server=true)
@@ -401,14 +403,12 @@ module Relay = struct
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
-
     (* Set the mapping file, need to hold this path so that when we
        reload, we know where to reload from *)
     mapping_file :=
       if Filename.is_relative device_map
       then Sys.getcwd () ^ "/" ^ device_map
       else device_map;
-
     (* Setup the signal handlers, needed so that we know when to
        reload, shutdown, etc. *)
     handle_signals tunnel_timeout max_retries;
@@ -445,8 +445,7 @@ module Relay = struct
           create_pid_file ()
         end;
         (* Create, start a simple HTTP status server *)
-        (if stats_server then start_status_server ~device_mapping ~devices
-         else Lwt.return_unit) >>
+        if stats_server then start_status_server ~device_mapping ~devices;
         (* Create, start the tunnels *)
         ((device_list_of_hashtable ~device_mapping ~devices)
          |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
@@ -460,7 +459,14 @@ module Relay = struct
         log_info_success "Restarting relay with reloaded mappings"
         |> Lwt.ignore_result;
         (* Spin it up again *)
-        begin_relay ~stats_server:false ~tunnel_timeout ~device_map:!mapping_file ~max_retries false
+        begin_relay
+          (* Use existing status server *)
+          ~stats_server:false
+          ~tunnel_timeout
+          ~device_map:!mapping_file
+          ~max_retries
+          (* No need to daemonize again *)
+          false
       end else begin
        P.sprintf "Original mapping file %s does not exist \
                   anymore, not reloading" !mapping_file
@@ -516,7 +522,7 @@ module Relay = struct
     )
 
   let status () =
-    (fun (ic, _) -> Lwt_io.read_line ic >|= Yojson.Basic.from_string)
-    |> Lwt_io.with_connection status_server_addr
+    Cohttp_lwt_unix.Client.get status_server >>= fun (_, body) ->
+    Cohttp_lwt_body.to_string body >|= Yojson.Basic.from_string
 
 end
