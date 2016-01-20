@@ -33,14 +33,14 @@ let error_with_color msg =
   colored_message ~time_color:T.White ~message_color:T.Red msg
 
 let log_info_bad ?exn msg = match !current_platform with
-  | Darwin -> error_with_color msg |> Lwt_log.info ?exn
-  | Linux -> msg |> Lwt_log.info ?exn
+  | Darwin -> error_with_color msg |> Lwt_log.ign_info ?exn
+  | Linux -> msg |> Lwt_log.ign_info ?exn
 
 let log_info_success msg = match !current_platform with
   | Darwin ->
     colored_message ~time_color:T.White ~message_color:T.Yellow msg
-    |> Lwt_log.info
-  | Linux -> msg |> Lwt_log.info
+    |> Lwt_log.ign_info
+  | Linux -> msg |> Lwt_log.ign_info
 
 let platform () =
   Lwt_process.(pread_line (shell "uname") >|= platform_of_string)
@@ -59,12 +59,12 @@ let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog 
                log_info_bad
                  (P.sprintf "Attempt %d, %s failed"
                     (current_count + 1)
-                    (Printexc.to_string e)) >>
+                    (Printexc.to_string e));
                Lwt_unix.sleep wait_between_failure >>=
                do_start (current_count + 1)
              | Lwt.Canceled -> Lwt.return_unit
              | exn ->
-               log_info_bad ~exn (P.sprintf "Attempt %d" (current_count + 1)) >>
+               log_info_bad ~exn (P.sprintf "Attempt %d" (current_count + 1));
                Lwt_unix.sleep wait_between_failure >>=
                do_start (current_count + 1)
            ))
@@ -270,22 +270,22 @@ module Relay = struct
           | Result Success ->
             (P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
                         Device_id: %d" udid port device_port device_id)
-            |> log_info_success >>
+            |> log_info_success;
             (* Provide the tunneling with a partial *)
             let e = echo tunnel_timeout in
-            e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
+            e tcp_ic mux_oc <&> e mux_ic tcp_oc >|= fun () ->
             ((P.sprintf "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
                          Device_id: %d" udid port device_port device_id)
              |> log_info_success)
           | Result Device_requested_not_connected ->
             (P.sprintf "Tunneling: Device requested was not connected. \
                         Udid: %s Device_id: %d" udid device_id)
-            |> log_info_bad
+            |> log_info_bad |> Lwt.return
           | Result Port_requested_not_available ->
             (P.sprintf "Tunneling. Port requested, %d, wasn't available. \
                         Udid: %s Port: %d Device_id: %d"
                device_port udid port device_id)
-            |> log_info_bad
+            |> log_info_bad |> Lwt.return
           | _ -> Lwt.return_unit
         end
         (* Finished tunneling, now cleanly close the chans *)
@@ -325,10 +325,8 @@ module Relay = struct
     Lwt.async_exception_hook := function
       | Lwt.Canceled ->
         (* TODO make this more informative *)
-        log_info_bad "A ssh connection timed out" |> Lwt.ignore_result
-      | Unix.Unix_error(UnixLabels.ENOTCONN, _, _) as exn ->
-        log_info_bad ~exn "Some kind of socket connection closed prematurely"
-        |> Lwt.ignore_result
+        log_info_bad "A ssh connection timed out";
+      | Unix.Unix_error(UnixLabels.ENOTCONN, _, _) -> ()
       | Unix.Unix_error(Unix.EADDRINUSE, _, _) ->
         error_with_color "Check if already running tunneling relay, probably are"
         |> prerr_endline;
@@ -390,9 +388,8 @@ module Relay = struct
           | _ -> Lwt.return_unit
         end)
     end;
-    Lwt.async begin fun () ->
-      Cohttp_lwt_unix.Server.create ~mode:(`TCP (`Port 5000)) server
-    end
+    (fun () -> Cohttp_lwt_unix.Server.create ~mode:(`TCP (`Port 5000)) server)
+    |> Lwt.async
 
   let rec begin_relay
       ?(stats_server=true)
@@ -456,8 +453,7 @@ module Relay = struct
   and do_restart tunnel_timeout max_retries =
     (if Sys.file_exists !mapping_file then begin
         complete_shutdown ();
-        log_info_success "Restarting relay with reloaded mappings"
-        |> Lwt.ignore_result;
+        log_info_success "Restarting relay with reloaded mappings";
         (* Spin it up again *)
         begin_relay
           (* Use existing status server *)
@@ -470,7 +466,7 @@ module Relay = struct
       end else begin
        P.sprintf "Original mapping file %s does not exist \
                   anymore, not reloading" !mapping_file
-       |> log_info_bad
+       |> log_info_bad |> Lwt.return
      end)
     |> Lwt.ignore_result
 
@@ -486,8 +482,7 @@ module Relay = struct
             let relay_count = List.length !running_servers in
             complete_shutdown ();
             P.sprintf "Shutdown %d relays, exiting now" relay_count
-            |> log_info_success
-            |> Lwt.ignore_result;
+            |> log_info_success;
             exit 0
           end);
         (* Handle plain kill from command line *)
