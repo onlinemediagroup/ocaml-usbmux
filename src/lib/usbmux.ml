@@ -355,15 +355,15 @@ module Relay = struct
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
     let callback _ _ _ =
-        let body =
-          `List (!device_list |> List.map begin fun (from_port, to_port, device_id, udid) ->
-              (`Assoc [("Local Port", `Int from_port);
-                       ("iDevice Port Forwarded", `Int to_port);
-                       ("Usbmuxd assigned iDevice ID", `Int device_id);
-                       ("iDevice UDID", `String udid)] : B.json)
-            end) |> B.to_string
-        in
-        Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body ()
+      let body =
+        `List (!device_list |> List.map begin fun (from_port, to_port, device_id, udid) ->
+            (`Assoc [("Local Port", `Int from_port);
+                     ("iDevice Port Forwarded", `Int to_port);
+                     ("Usbmuxd assigned iDevice ID", `Int device_id);
+                     ("iDevice UDID", `String udid)] : B.json)
+          end) |> B.to_string
+      in
+      Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body ()
     in
     let server = Cohttp_lwt_unix.Server.make ~callback () in
 
@@ -374,6 +374,8 @@ module Relay = struct
           | Event Attached { serial_number = s; connection_speed = _;
                              connection_type = _; product_id = _;
                              location_id = _; device_id = d; } ->
+            (Printf.sprintf "Device %d with serial number: %s connected" d s)
+            |> log_info_success;
             if not (Hashtbl.mem devices d)
             then
               load_mappings !mapping_file >|= fun device_mapping ->
@@ -382,12 +384,14 @@ module Relay = struct
             else
               Lwt.return ()
           | Event Detached d ->
+            Printf.sprintf "Device %d disconnected" d |> log_info_success;
             load_mappings !mapping_file >|= fun device_mapping ->
             Hashtbl.remove devices d;
             device_list := device_list_of_hashtable ~device_mapping ~devices
           | _ -> Lwt.return_unit
         end)
     end;
+    (* Server also gets its own thread *)
     (fun () -> Cohttp_lwt_unix.Server.create ~mode:(`TCP (`Port 5000)) server)
     |> Lwt.async
 

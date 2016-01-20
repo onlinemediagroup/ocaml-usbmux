@@ -61,7 +61,7 @@ let show_status () =
   in
   let colorize = Usbmux.colored_message ~with_time:false in
   Lwt_main.run begin
-    (* try%lwt *)
+    try%lwt
       R.status () >>= fun as_json ->
       let msg =
         Printf.sprintf "%d %s\n%s\n%s"
@@ -80,9 +80,9 @@ let show_status () =
         |> Lwt_io.with_file ~mode:Lwt_io.Output f_name >>= fun () ->
         Sys.command (Printf.sprintf "%s %s" p f_name) |> ignore;
         Lwt_unix.unlink f_name
-    (* with Unix.Unix_error(Unix.ECONNREFUSED, _, _) -> *)
-    (*   Usbmux.error_with_color "Couldn't get status, check if relay is running" *)
-    (*   |> Lwt_io.printl *)
+    with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
+      Usbmux.error_with_color "Couldn't get status, check if gandalf is running"
+      |> Lwt_io.printl
   end;
   exit 0
 
@@ -116,6 +116,9 @@ let begin_program
   (* Now we start spinning up Lwt *)
   match port_pairs with
   | None ->
+    if do_daemonize
+    then Usbmux.error_with_color "Warning: Only in listen mode, not daemonizing"
+         |> prerr_endline;
     P.(create_listener ~max_retries ~event_cb:begin function
         | Event Attached { serial_number = s; connection_speed = _;
                            connection_type = _; product_id = _; location_id = _;
