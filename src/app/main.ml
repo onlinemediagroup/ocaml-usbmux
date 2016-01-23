@@ -67,14 +67,9 @@ let show_status () =
         Yojson.Basic.Util.member "uptime" as_json
         |> Yojson.Basic.Util.to_float
       in
-      let ssh_conns_made =
-        Yojson.Basic.Util.member "connections_made" as_json
-        |> Yojson.Basic.Util.to_int
-      in
       let payload = Yojson.Basic.Util.member "status_data" as_json in
       let msg =
-        Printf.sprintf "%s\n%s\n%d %s\n%s\n%s"
-          (Printf.sprintf "%d ssh connections have been made" ssh_conns_made)
+        Printf.sprintf "%s\n%d %s\n%s\n%s"
           (Printf.sprintf "Uptime: Hours: %.2f Minutes: %.2f Seconds: %.2f"
              (uptime /. 60.0 /. 60.0)
              (uptime /. 60.0)
