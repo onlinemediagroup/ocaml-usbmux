@@ -191,9 +191,11 @@ module Relay = struct
 
   exception Bad_mapping_file of string
 
-  let relay_lock = Lwt_mutex.create ()
+  let (relay_lock, tunnel_counter_lock) =
+    Lwt_mutex.create (), Lwt_mutex.create ()
 
-  let (running_servers, mapping_file) = ref [], ref ""
+  let (running_servers, mapping_file, tunnels_created_count) =
+    ref [], ref "", ref 0
 
   let pid_file = "/var/run/gandalf.pid"
 
@@ -258,6 +260,8 @@ module Relay = struct
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
     let server =
       Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
+        (fun () -> Lwt.return (tunnels_created_count := !tunnels_created_count + 1))
+        |> Lwt_mutex.with_lock tunnel_counter_lock >>
         Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
           let msg = connect_message ~device_id ~device_port in
           write_header ~total_len:(msg_length msg) mux_oc >>
@@ -357,20 +361,23 @@ module Relay = struct
     let start_time = Unix.gettimeofday () in
     let callback _ _ _ =
       let uptime = Unix.gettimeofday () -. start_time in
-      let body =
-        `Assoc [
-          ("uptime", `Float uptime);
-          ("status_data",
-           `List (!device_list
-                  |> List.map begin fun (from_port, to_port, device_id, udid) ->
-                    (`Assoc [("Local Port", `Int from_port);
-                             ("iDevice Port Forwarded", `Int to_port);
-                             ("Usbmuxd assigned iDevice ID", `Int device_id);
-                             ("iDevice UDID", `String udid)] : B.json)
-                  end))]
-        |> B.to_string
-      in
-      Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body ()
+      Lwt_mutex.with_lock tunnel_counter_lock begin fun () ->
+        let body =
+          `Assoc [
+            ("uptime", `Float uptime);
+            ("connections_made", `Int !tunnels_created_count);
+            ("status_data",
+             `List (!device_list
+                    |> List.map begin fun (from_port, to_port, device_id, udid) ->
+                      (`Assoc [("Local Port", `Int from_port);
+                               ("iDevice Port Forwarded", `Int to_port);
+                               ("Usbmuxd assigned iDevice ID", `Int device_id);
+                               ("iDevice UDID", `String udid)] : B.json)
+                    end))]
+          |> B.to_string
+        in
+        Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body ()
+      end
     in
     let server = Cohttp_lwt_unix.Server.make ~callback () in
 
