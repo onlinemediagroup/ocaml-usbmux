@@ -354,14 +354,21 @@ module Relay = struct
 
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
+    let start_time = Unix.gettimeofday () in
     let callback _ _ _ =
+      let uptime = Unix.gettimeofday () -. start_time in
       let body =
-        `List (!device_list |> List.map begin fun (from_port, to_port, device_id, udid) ->
-            (`Assoc [("Local Port", `Int from_port);
-                     ("iDevice Port Forwarded", `Int to_port);
-                     ("Usbmuxd assigned iDevice ID", `Int device_id);
-                     ("iDevice UDID", `String udid)] : B.json)
-          end) |> B.to_string
+        `Assoc [
+          ("uptime", `Float uptime);
+          ("status_data",
+           `List (!device_list
+                  |> List.map begin fun (from_port, to_port, device_id, udid) ->
+                    (`Assoc [("Local Port", `Int from_port);
+                             ("iDevice Port Forwarded", `Int to_port);
+                             ("Usbmuxd assigned iDevice ID", `Int device_id);
+                             ("iDevice UDID", `String udid)] : B.json)
+                  end))]
+        |> B.to_string
       in
       Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body ()
     in

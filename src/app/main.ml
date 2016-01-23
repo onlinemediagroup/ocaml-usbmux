@@ -63,14 +63,23 @@ let show_status () =
   Lwt_main.run begin
     try%lwt
       R.status () >>= fun as_json ->
+      let uptime =
+        Yojson.Basic.Util.member "uptime" as_json
+        |> Yojson.Basic.Util.to_float
+      in
+      let payload = Yojson.Basic.Util.member "status_data" as_json in
       let msg =
-        Printf.sprintf "%d %s\n%s\n%s"
-          (Yojson.Basic.Util.to_list as_json |> List.length)
+        Printf.sprintf "%s\n%d %s\n%s\n%s"
+          (Printf.sprintf "Uptime: Hours: %.2f Minutes: %.2f Seconds: %.2f"
+             (uptime /. 60.0 /. 60.0)
+             (uptime /. 60.0)
+             (uptime))
+          (Yojson.Basic.Util.to_list payload |> List.length)
           ("devices are tunneled, ssh into them with the port numbers printed \
             below.\nExample:" |> colorize ~message_color:Usbmux.T.White)
           ("\tssh root@localhost -p <some_port>"
            |> colorize ~message_color:Usbmux.T.Cyan)
-          (Yojson.Basic.pretty_to_string as_json)
+          (Yojson.Basic.pretty_to_string payload)
       in
       match pager with
       | None -> Lwt_io.printl msg
