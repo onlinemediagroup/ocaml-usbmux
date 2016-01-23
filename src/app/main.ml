@@ -70,10 +70,8 @@ let show_status () =
       let payload = Yojson.Basic.Util.member "status_data" as_json in
       let msg =
         Printf.sprintf "%s\n%d %s\n%s\n%s"
-          (Printf.sprintf "Uptime: Hours: %.2f Minutes: %.2f Seconds: %.2f"
-             (uptime /. 60.0 /. 60.0)
-             (uptime /. 60.0)
-             (uptime))
+          (Printf.sprintf "Uptime -> Hours: %.2f Minutes: %.2f"
+             (uptime /. 60.0 /. 60.0) (uptime /. 60.0))
           (Yojson.Basic.Util.to_list payload |> List.length)
           ("devices are tunneled, ssh into them with the port numbers printed \
             below.\nExample:" |> colorize ~message_color:Usbmux.T.White)
