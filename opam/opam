@@ -16,6 +16,10 @@ available: [ ocaml-version >= "4.02.0" ]
 remove: [
   ["ocaml" "%{etc}%/usbmux/_oasis_remove_.ml" "%{etc}%/usbmux"]
 ]
+depexts: [
+  [["debian"] ["usbmuxd"]]
+  [["ubuntu"] ["usbmuxd"]]
+]
 build-test: [
   ["ocaml" "setup.ml" "-configure" "--enable-tests"]
   ["ocaml" "setup.ml" "-build"]
@@ -30,4 +34,19 @@ depends: [
   "plist"
   "stringext"
   "yojson"
+]
+post-messages: [
+  "Now you can ssh into your jailbroken iDevice using the CLI, gandalf."
+  "Simple invocation:"
+  "sudo `which gandalf` --mappings etc/mapping --daemonize --verbose"
+  "where etc/mapping is a file of the format <udid>:<localport>:<device_port>"
+  "See uptime, tunnels and other metadata with:"
+  "gandalf --status"
+  "Note that with over 13 devices usbmuxd will start to buck "
+  "because of threading issue with libplist."
+  "Use the custom one provided at https://github.com/onlinemediagroup/libplist"
+  ""
+  "The Linux kernel will also have trouble with many USB3.0 devices, ie over 15ish"
+  "Fix that issue by turning off USB3.0 support in your BIOS"
+  "For this and other issues, be sure to check the README"
 ]

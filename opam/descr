@@ -11,3 +11,10 @@ for an iPhone/iPod/iDevice.
 Example usage:
 
 sudo `which gandalf` --mappings etc/mapping --daemonize --verbose
+
+See uptime, tunnels and other metadata with:
+
+gandalf --status
+
+Check out the man page or see the README at:
+https://github.com/onlinemediagroup/ocaml-usbmux/blob/master/README.org
