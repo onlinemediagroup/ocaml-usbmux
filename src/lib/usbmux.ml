@@ -360,6 +360,7 @@ module Relay = struct
       let body =
         `Assoc [
           ("uptime", `Float uptime);
+          ("mappings_file", `String !mapping_file);
           ("status_data",
            `List (!device_list
                   |> List.map begin fun (from_port, to_port, device_id, udid) ->

@@ -3,6 +3,7 @@ open Cmdliner
 
 module P = Usbmux.Protocol
 module R = Usbmux.Relay
+module U = Yojson.Basic.Util
 
 let be_verbose =
   let doc = "Output Debugging Info" in
@@ -63,16 +64,17 @@ let show_status () =
   Lwt_main.run begin
     try%lwt
       R.status () >>= fun as_json ->
-      let uptime =
-        Yojson.Basic.Util.member "uptime" as_json
-        |> Yojson.Basic.Util.to_float
+      let uptime = U.member "uptime" as_json |> U.to_float in
+      let payload = U.member "status_data" as_json in
+      let mapping_file =
+        U.member "mappings_file" as_json |> U.to_string
       in
-      let payload = Yojson.Basic.Util.member "status_data" as_json in
       let msg =
-        Printf.sprintf "%s\n%d %s\n%s\n%s"
+        Printf.sprintf "%s\n%s\n%d %s\n%s\n%s"
           (Printf.sprintf "Uptime -> Hours: %.2f Minutes: %.2f"
              (uptime /. 60.0 /. 60.0) (uptime /. 60.0))
-          (Yojson.Basic.Util.to_list payload |> List.length)
+          (Printf.sprintf "Referencing mapping file at: %s" mapping_file)
+          (U.to_list payload |> List.length)
           ("devices are tunneled, ssh into them with the port numbers printed \
             below.\nExample:" |> colorize ~message_color:Usbmux.T.White)
           ("\tssh root@localhost -p <some_port>"
