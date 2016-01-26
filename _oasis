@@ -33,3 +33,9 @@ Executable gandalf
   MainIs: main.ml
   CompiledObject: native
   BuildDepends: cmdliner, usbmux
+
+
+SourceRepository master
+  Type:     git
+  Location: https://github.com/onlinemediagroup/ocaml-usbmux.git
+  Browser:  https://github.com/onlinemediagroup/ocaml-usbmux
