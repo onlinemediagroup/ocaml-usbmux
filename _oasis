@@ -22,7 +22,7 @@ Library usbmux
   install: true
   CompiledObject: native
   BuildDepends:
-    lwt.unix, lwt.ppx, plist,
+    lwt.unix (>= 2.5.1), lwt.ppx, plist,
     yojson, ANSITerminal, stringext,
     cohttp.lwt
 
@@ -33,3 +33,9 @@ Executable gandalf
   MainIs: main.ml
   CompiledObject: native
   BuildDepends: cmdliner, usbmux
+
+
+SourceRepository master
+  Type:     git
+  Location: https://github.com/onlinemediagroup/ocaml-usbmux.git
+  Browser:  https://github.com/onlinemediagroup/ocaml-usbmux
