@@ -22,7 +22,7 @@ Library usbmux
   install: true
   CompiledObject: native
   BuildDepends:
-    lwt.unix, lwt.ppx, plist,
+    lwt.unix (>= 2.5.1), lwt.ppx, plist,
     yojson, ANSITerminal, stringext,
     cohttp.lwt
 
