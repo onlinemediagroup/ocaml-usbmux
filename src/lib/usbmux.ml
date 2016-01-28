@@ -453,8 +453,20 @@ module Relay = struct
           (* Might require super user permissions *)
           create_pid_file ()
         end;
-        (* Create, start a simple HTTP status server *)
-        if stats_server then start_status_server ~device_mapping ~devices;
+        (* Create, start a simple HTTP status server. We also register
+           the at_exit function here because it ought to happen just
+           once, like our status server *)
+        if stats_server then begin
+          start_status_server ~device_mapping ~devices;
+          Lwt_main.at_exit begin fun () ->
+            let msg =
+              Printf.sprintf "Exited with %d still running; this is a bug."
+                (List.length !running_servers)
+            in
+            (if do_daemonize then log_info_bad msg else prerr_endline msg)
+            |> Lwt.return
+          end
+        end;
         (* Create, start the tunnels *)
         ((device_list_of_hashtable ~device_mapping ~devices)
          |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
