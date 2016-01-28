@@ -467,11 +467,16 @@ module Relay = struct
             |> Lwt.return
           end
         end;
+        let rec forever () =
+          (* This thread should never return but its better to be safe
+             than sorry*)
+          fst (Lwt.wait ()) >>= forever
+        in
         (* Create, start the tunnels *)
         ((device_list_of_hashtable ~device_mapping ~devices)
          |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
         (* Wait forever *)
-        fst (Lwt.wait ())
+        forever ()
     end
 
   and do_restart tunnel_timeout max_retries =
