@@ -30,10 +30,7 @@ module Protocol : sig
     | Malformed_request
 
   (** A device event with associated metadata *)
-  type event = Attached of device_t | Detached of device_id
-
-  (** Simple type alias for integer *)
-  and device_id = int
+  type event = Attached of device_t | Detached of int
 
   (** High level metadata about the device connection *)
   and device_t = {

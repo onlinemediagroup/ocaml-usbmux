@@ -82,8 +82,7 @@ module Protocol = struct
                  | Malformed_request
 
   type event = Attached of device_t
-             | Detached of device_id
-  and device_id = int
+             | Detached of int
   and device_t = { serial_number : string;
                    connection_speed : int;
                    connection_type : string;
@@ -193,7 +192,8 @@ module Relay = struct
 
   let relay_lock = Lwt_mutex.create ()
 
-  let (running_servers, mapping_file) = Hashtbl.create 10, ref ""
+  let (running_servers, mapping_file, relay_timeout) =
+    Hashtbl.create 10, ref "", ref 0
 
   let pid_file = "/var/run/gandalf.pid"
 
@@ -222,6 +222,9 @@ module Relay = struct
   let timeout_stream ~after_timeout ~read_timeout stream =
     (fun () ->
        Lwt.pick
+         (* Either get data off the stream or timeout after a period
+            of time, we don't want to keep relays open that have no
+            activity on them *)
          [Lwt_stream.get stream; timeout_task ~after_timeout read_timeout])
     |> Lwt_stream.from
 
@@ -252,7 +255,7 @@ module Relay = struct
     prepped |> List.iter (fun (k, v, p_forward) -> Hashtbl.add t k (v, p_forward));
     t
 
-  let do_tunnel tunnel_timeout (port, device_port, device_id, udid) =
+  let do_tunnel tunnel_timeout (udid, (port, device_port, device_id)) =
     let open Protocol in
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
     let server =
@@ -297,6 +300,7 @@ module Relay = struct
     |> Lwt_mutex.with_lock relay_lock
 
   let create_pid_file () =
+    (* This should use lockf *)
     Unix.(
       try
         let open_pid_file =
@@ -310,7 +314,7 @@ module Relay = struct
                                      make sure you have right permissions"
                             pid_file)
         |> prerr_endline;
-        exit 2;
+        exit 2
     )
 
   let complete_shutdown () =
@@ -338,11 +342,11 @@ module Relay = struct
         |> prerr_endline;
         exit 4
 
-  let device_list_of_hashtable ~device_mapping ~devices =
+  let device_alist_of_hashtable ~device_mapping ~devices =
     Hashtbl.fold begin fun device_id_key udid_value accum ->
       try
         let (from_port, to_port) = Hashtbl.find device_mapping udid_value in
-        (from_port, to_port, device_id_key, udid_value) :: accum
+        (udid_value, (from_port, to_port, device_id_key)) :: accum
       with
         Not_found ->
         Lwt_log.ign_info_f
@@ -352,7 +356,8 @@ module Relay = struct
       devices []
 
   let start_status_server ~device_mapping ~devices =
-    let device_list = ref (device_list_of_hashtable ~device_mapping ~devices) in
+    let device_list = ref (device_alist_of_hashtable ~device_mapping ~devices) in
+    let starting_devices = !device_list in
     let start_time = Unix.gettimeofday () in
     let callback _ _ _ =
       let uptime = Unix.gettimeofday () -. start_time in
@@ -362,7 +367,7 @@ module Relay = struct
           ("mappings_file", `String !mapping_file);
           ("status_data",
            `List (!device_list
-                  |> List.map begin fun (from_port, to_port, device_id, udid) ->
+                  |> List.map begin fun (udid, (from_port, to_port, device_id)) ->
                     (`Assoc [("Local Port", `Int from_port);
                              ("iDevice Port Forwarded", `Int to_port);
                              ("Usbmuxd assigned iDevice ID", `Int device_id);
@@ -377,6 +382,20 @@ module Relay = struct
     (* Create another listener thread for updates to the devices
        listing, needed as device plugs in and out *)
     Lwt.async begin fun () ->
+      let shutdown_and_prune d =
+        Lwt_io.shutdown_server (Hashtbl.find running_servers d);
+        Hashtbl.remove running_servers d
+      in
+      let spin_up_server device_udid new_id =
+        try
+          let (port, device_port, _) = List.assoc device_udid starting_devices in
+          (device_udid, (port, device_port, new_id)) |> do_tunnel !relay_timeout
+        with
+          Not_found ->
+          log_info_bad "relay can't create tunnel for device that \
+                        has never been seen before"
+          |> Lwt.return
+      in
       Protocol.(create_listener ~max_retries:3 ~event_cb:begin function
           | Event Attached { serial_number = s; connection_speed = _;
                              connection_type = _; product_id = _;
@@ -385,16 +404,19 @@ module Relay = struct
             |> log_info_success;
             if not (Hashtbl.mem devices d)
             then
+              (* Two cases, devices that have been known or unknown devices *)
               load_mappings !mapping_file >|= fun device_mapping ->
               Hashtbl.add devices d s;
-              device_list := device_list_of_hashtable ~device_mapping ~devices
+              spin_up_server s d |> Lwt.ignore_result;
+              device_list := device_alist_of_hashtable ~device_mapping ~devices
             else
               Lwt.return ()
           | Event Detached d ->
             Printf.sprintf "Device %d disconnected" d |> log_info_success;
             load_mappings !mapping_file >|= fun device_mapping ->
             Hashtbl.remove devices d;
-            device_list := device_list_of_hashtable ~device_mapping ~devices
+            shutdown_and_prune d;
+            device_list := device_alist_of_hashtable ~device_mapping ~devices
           | _ -> Lwt.return_unit
         end)
     end;
@@ -411,6 +433,10 @@ module Relay = struct
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
+
+    (* Set the tunneling timeouts *)
+    relay_timeout := tunnel_timeout;
+
     (* Set the mapping file, need to hold this path so that when we
        reload, we know where to reload from *)
     mapping_file :=
@@ -472,7 +498,7 @@ module Relay = struct
           fst (Lwt.wait ()) >>= forever
         in
         (* Create, start the tunnels *)
-        ((device_list_of_hashtable ~device_mapping ~devices)
+        ((device_alist_of_hashtable ~device_mapping ~devices)
          |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
         (* Wait forever *)
         forever ()
