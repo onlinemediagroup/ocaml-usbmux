@@ -193,7 +193,7 @@ module Relay = struct
 
   let relay_lock = Lwt_mutex.create ()
 
-  let (running_servers, mapping_file) = ref [], ref ""
+  let (running_servers, mapping_file) = Hashtbl.create 10, ref ""
 
   let pid_file = "/var/run/gandalf.pid"
 
@@ -205,8 +205,7 @@ module Relay = struct
     close_in open_pid_file;
     target_pid
 
-  let close_chans (ic, oc) () =
-    Lwt_io.close ic >> Lwt_io.close oc
+  let close_chans (ic, oc) () = Lwt_io.close ic >> Lwt_io.close oc
 
   let timeout_task ~after_timeout n =
     let t = fst (Lwt.task ()) in
@@ -294,7 +293,7 @@ module Relay = struct
       end
     in
     (* Register the server *)
-    (fun () -> Lwt.return (running_servers := server :: !running_servers))
+    (fun () -> Lwt.return (Hashtbl.add running_servers device_id server))
     |> Lwt_mutex.with_lock relay_lock
 
   let create_pid_file () =
@@ -316,10 +315,10 @@ module Relay = struct
 
   let complete_shutdown () =
     (* Kill the servers first *)
-    !running_servers |> List.iter Lwt_io.shutdown_server;
+    running_servers |> Hashtbl.iter (fun _ tunnel -> Lwt_io.shutdown_server tunnel);
     Lwt_log.ign_info_f
-      "Completed shutting down %d servers" (List.length !running_servers);
-    running_servers := []
+      "Completed shutting down %d servers" (Hashtbl.length running_servers);
+    Hashtbl.reset running_servers
 
   let () =
     Lwt.async_exception_hook := function
@@ -461,7 +460,7 @@ module Relay = struct
           Lwt_main.at_exit begin fun () ->
             let msg =
               Printf.sprintf "Exited with %d still running; this is a bug."
-                (List.length !running_servers)
+                (Hashtbl.length running_servers)
             in
             (if do_daemonize then log_info_bad msg else prerr_endline msg)
             |> Lwt.return
@@ -508,7 +507,7 @@ module Relay = struct
         signal sigusr1 (Signal_handle (fun _ -> do_restart tunnel_timeout max_retries));
         (* Shutdown the servers, relays then exit *)
         signal sigusr2 (Signal_handle begin fun _ ->
-            let relay_count = List.length !running_servers in
+            let relay_count = Hashtbl.length running_servers in
             complete_shutdown ();
             P.sprintf "Shutdown %d relays, exiting now" relay_count
             |> log_info_success;
