@@ -326,21 +326,28 @@ module Relay = struct
 
   let () =
     Lwt.async_exception_hook := function
-      | Lwt.Canceled ->
-        (* TODO make this more informative *)
-        log_info_bad "A ssh connection timed out";
-      | Unix.Unix_error(UnixLabels.ENOTCONN, _, _) -> ()
-      | Unix.Unix_error(Unix.EADDRINUSE, _, _) ->
-        error_with_color "Check if already running tunneling relay, probably are"
-        |> prerr_endline;
-        exit 6
       | e ->
-        error_with_color
-          (P.sprintf
-             "Please report, this is a bug: Unhandled async exception: %s"
-             (Printexc.to_string e))
+
+        Printexc.get_callstack 5
+        |> Printexc.raw_backtrace_to_string
         |> prerr_endline;
-        exit 4
+
+        Printexc.to_string e |> prerr_endline
+      (* | Lwt.Canceled -> *)
+      (*   (\* TODO make this more informative *\) *)
+      (*   log_info_bad "A ssh connection timed out"; *)
+      (* | Unix.Unix_error(UnixLabels.ENOTCONN, _, _) -> () *)
+      (* | Unix.Unix_error(Unix.EADDRINUSE, _, _) -> *)
+      (*   error_with_color "Check if already running tunneling relay, probably are" *)
+      (*   |> prerr_endline; *)
+      (*   exit 6 *)
+      (* | e -> *)
+      (*   error_with_color *)
+      (*     (P.sprintf *)
+      (*        "Please report, this is a bug: Unhandled async exception: %s" *)
+      (*        (Printexc.to_string e)) *)
+      (*   |> prerr_endline; *)
+      (*   exit 4 *)
 
   let device_alist_of_hashtable ~device_mapping ~devices =
     Hashtbl.fold begin fun device_id_key udid_value accum ->

@@ -190,6 +190,7 @@ let top_level_info =
   Term.info "gandalf" ~version:"1.0" ~doc ~man
 
 let () =
+  Printexc.record_backtrace true;
   match Term.eval (entry_point, top_level_info) with
   | `Ok program -> Lwt_main.run program
   | _ -> ()
