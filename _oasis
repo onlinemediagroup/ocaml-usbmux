@@ -7,6 +7,7 @@ Authors:     Edgar Aroutiounian <edgar.factorial@gmail.com>
 Maintainers: Edgar Aroutiounian <edgar.factorial@gmail.com>
 Homepage:    https://github.com/onlinemediagroup/ocaml-usbmux
 License:     BSD-3-clause
+OCamlVersion: >= 4.02.0
 Plugins:     META (0.4), DevFiles (0.4)
 BuildTools: ocamlbuild
 
