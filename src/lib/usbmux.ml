@@ -45,6 +45,8 @@ let log_info_success msg = match !current_platform with
 let platform () =
   Lwt_process.(pread_line (shell "uname") >|= platform_of_string)
 
+let pid_file = "/var/run/gandalf.pid"
+
 let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog =
   assert (max_retries > 0 && max_retries < 20);
   assert (wait_between_failure > 0.0 && wait_between_failure < 10.0);
@@ -195,8 +197,6 @@ module Relay = struct
   let (running_servers, mapping_file, relay_timeout) =
     Hashtbl.create 10, ref "", ref 0
 
-  let pid_file = "/var/run/gandalf.pid"
-
   let status_server = Uri.of_string "http://127.0.0.1:5000"
 
   let relay_pid () =
@@ -298,24 +298,6 @@ module Relay = struct
     (* Register the server *)
     (fun () -> Lwt.return (Hashtbl.add running_servers device_id server))
     |> Lwt_mutex.with_lock relay_lock
-
-  let create_pid_file () =
-    (* This should use lockf *)
-    Unix.(
-      try
-        let open_pid_file =
-          openfile pid_file [O_RDWR; O_CREAT; O_CLOEXEC] 0o666
-        in
-        let current_pid = getpid () |> string_of_int in
-        write open_pid_file current_pid 0 (String.length current_pid) |> ignore;
-        close open_pid_file
-      with Unix_error(EACCES, _, _) ->
-        error_with_color (P.sprintf "Couldn't open pid file %s, \
-                                     make sure you have right permissions"
-                            pid_file)
-        |> prerr_endline;
-        exit 2
-    )
 
   let complete_shutdown () =
     (* Kill the servers first *)
@@ -434,8 +416,7 @@ module Relay = struct
       ?(stats_server=true)
       ~tunnel_timeout
       ~device_map
-      ~max_retries
-      do_daemonize =
+      max_retries =
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
@@ -478,25 +459,18 @@ module Relay = struct
              end)]
       with
         Lwt_unix.Timeout ->
-        if do_daemonize then begin
-          (* This order matters *)
-          Lwt_daemon.daemonize ~syslog:true ();
-          (* Might require super user permissions *)
-          create_pid_file ()
-        end;
         (* Create, start a simple HTTP status server. We also register
            the at_exit function here because it ought to happen just
            once, like our status server *)
         if stats_server then begin
           start_status_server ~device_mapping ~devices;
-          Lwt_main.at_exit begin fun () ->
-            let msg =
-              Printf.sprintf "Exited with %d still running; this is a bug."
-                (Hashtbl.length running_servers)
-            in
-            (if do_daemonize then log_info_bad msg else prerr_endline msg)
-            |> Lwt.return
-          end
+          (fun () ->
+             Printf.sprintf
+               "Exited with %d still running; this is a bug."
+               (Hashtbl.length running_servers)
+             |> error_with_color
+             |> Lwt_io.printl)
+          |> Lwt_main.at_exit
         end;
         let rec forever () =
           (* This thread should never return but its better to be safe
@@ -520,9 +494,7 @@ module Relay = struct
           ~stats_server:false
           ~tunnel_timeout
           ~device_map:!mapping_file
-          ~max_retries
-          (* No need to daemonize again *)
-          false
+          max_retries
       end else begin
        P.sprintf "Original mapping file %s does not exist \
                   anymore, not reloading" !mapping_file
