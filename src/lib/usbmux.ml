@@ -439,7 +439,7 @@ module Relay = struct
 
     with_retries ~max_retries begin fun () ->
       load_mappings !mapping_file >>= fun device_mapping ->
-      let devices = Hashtbl.create 12 in
+      let devices = Hashtbl.create 24 in
       try%lwt
         (* We do this because usbmuxd itself assigns device IDs and we
            need to begin the listen message, then find out the device IDs
