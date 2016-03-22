@@ -345,7 +345,6 @@ module Relay = struct
 
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_alist_of_hashtable ~device_mapping ~devices) in
-    let starting_devices = !device_list in
     let start_time = Unix.gettimeofday () in
     let callback _ _ _ =
       let uptime = Unix.gettimeofday () -. start_time in
@@ -374,14 +373,15 @@ module Relay = struct
         Lwt_io.shutdown_server (Hashtbl.find running_servers d);
         Hashtbl.remove running_servers d
       in
-      let spin_up_server device_udid new_id =
+      let spin_up_tunnel device_udid new_id =
         try
-          let (port, device_port, _) = List.assoc device_udid starting_devices in
+          let (port, device_port, _) = List.assoc device_udid !device_list in
           (device_udid, (port, device_port, new_id)) |> do_tunnel !relay_timeout
         with
           Not_found ->
-          log_info_bad "relay can't create tunnel for device that \
-                        has never been seen before"
+          P.sprintf
+            "relay can't create tunnel for device udid: %s" device_udid
+          |> log_info_bad
           |> Lwt.return
       in
       Protocol.(create_listener ~max_retries:3 ~event_cb:begin function
@@ -395,8 +395,8 @@ module Relay = struct
               (* Two cases, devices that have been known or unknown devices *)
               load_mappings !mapping_file >|= fun device_mapping ->
               Hashtbl.add devices d s;
-              spin_up_server s d |> Lwt.ignore_result;
-              device_list := device_alist_of_hashtable ~device_mapping ~devices
+              device_list := device_alist_of_hashtable ~device_mapping ~devices;
+              spin_up_tunnel s d |> Lwt.ignore_result
             else
               Lwt.return ()
           | Event Detached d ->
@@ -426,10 +426,8 @@ module Relay = struct
 
     (* Set the mapping file, need to hold this path so that when we
        reload, we know where to reload from *)
-    mapping_file :=
-      if Filename.is_relative device_map
-      then Sys.getcwd () ^ "/" ^ device_map
-      else device_map;
+    mapping_file := device_map;
+
     (* Setup the signal handlers, needed so that we know when to
        reload, shutdown, etc. *)
     handle_signals tunnel_timeout max_retries;

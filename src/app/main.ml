@@ -123,6 +123,7 @@ let begin_program
     do_status
     tunnel_timeout
     do_exit =
+  let starting_place = Sys.getcwd () in
   if do_daemonize then begin
     (* This order matters, must get this done before anything Lwt
        related *)
@@ -162,7 +163,13 @@ let begin_program
         | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
         | _ -> Lwt.return ()
       end)
-  | Some device_map -> R.begin_relay ~tunnel_timeout ~device_map max_retries
+  | Some device_map ->
+    let device_map =
+      if Filename.is_relative device_map
+      then Printf.sprintf "%s/%s" starting_place device_map
+      else device_map
+    in
+    R.begin_relay ~tunnel_timeout ~device_map max_retries
 
 let entry_point =
   Term.(pure
