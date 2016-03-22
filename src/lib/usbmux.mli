@@ -14,6 +14,9 @@ val error_with_color : string -> string
 (** Get the current platform *)
 val platform : unit -> platform Lwt.t
 
+(** Path to relay's running pid file *)
+val pid_file : string
+
 (** Module containing types definitions and functions for
     communicating with usbmuxd *)
 module Protocol : sig
@@ -60,11 +63,11 @@ module Relay : sig
   (** Actions that can be performed on running relays *)
   type action = Shutdown | Reload
 
-  (** Create a relay with option to daemonize. *)
+  (** Create a relay, last int is retries *)
   val begin_relay :
     ?stats_server:bool ->
     tunnel_timeout:int ->
-    device_map:Lwt_io.file_name -> max_retries:int -> bool -> unit Lwt.t
+    device_map:Lwt_io.file_name -> int -> unit Lwt.t
 
   (** Perform an action on a relay *)
   val perform : action -> unit

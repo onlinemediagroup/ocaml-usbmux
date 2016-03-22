@@ -95,6 +95,25 @@ let show_status () =
   end;
   exit 0
 
+let create_pid_file () =
+  (* This should use lockf *)
+  Unix.(
+    try
+      let open_pid_file =
+        openfile Usbmux.pid_file [O_RDWR; O_CREAT; O_CLOEXEC] 0o666
+      in
+      let current_pid = getpid () |> string_of_int in
+      write open_pid_file current_pid 0 (String.length current_pid) |> ignore;
+      close open_pid_file
+    with Unix_error(EACCES, _, _) ->
+      Printf.sprintf
+        "Couldn't open pid file %s, make sure you have right permissions"
+        Usbmux.pid_file
+      |> Usbmux.error_with_color
+      |> prerr_endline;
+      exit 2
+  )
+
 let begin_program
     debug
     port_pairs
@@ -104,6 +123,13 @@ let begin_program
     do_status
     tunnel_timeout
     do_exit =
+  if do_daemonize then begin
+    (* This order matters, must get this done before anything Lwt
+       related *)
+    Lwt_daemon.daemonize ~syslog:true ();
+    (* Might require super user permissions *)
+    create_pid_file ()
+  end;
   (* Black magic for the entire running process *)
   if debug then Lwt_log.add_rule "*" Lwt_log.Info;
 
@@ -136,7 +162,7 @@ let begin_program
         | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
         | _ -> Lwt.return ()
       end)
-  | Some device_map -> R.begin_relay ~tunnel_timeout ~device_map ~max_retries do_daemonize
+  | Some device_map -> R.begin_relay ~tunnel_timeout ~device_map max_retries
 
 let entry_point =
   Term.(pure
