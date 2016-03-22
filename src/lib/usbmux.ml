@@ -324,17 +324,23 @@ module Relay = struct
       "Completed shutting down %d servers" (Hashtbl.length running_servers);
     Hashtbl.reset running_servers
 
+  (* Note that this won't exit the program unless exit is explicitly
+     called *)
   let () =
     Lwt.async_exception_hook := function
-      | Lwt.Canceled ->
-        (* TODO make this more informative *)
-        log_info_bad "A ssh connection timed out";
-      | Unix.Unix_error(UnixLabels.ENOTCONN, _, _) -> ()
+      | Lwt.Canceled -> log_info_bad "A ssh connection timed out";
+      | Unix.Unix_error(UnixLabels.ENOTCONN, _, _) ->
+        log_info_bad "Connection refused"
       | Unix.Unix_error(Unix.EADDRINUSE, _, _) ->
-        error_with_color "Check if already running tunneling relay, probably are"
+        "Check if already running tunneling relay, probably are"
+        |> error_with_color
         |> prerr_endline;
-        exit 6
       | e ->
+        Printexc.get_callstack 5
+        |> Printexc.raw_backtrace_to_string
+        |> error_with_color
+        |> prerr_endline;
+
         error_with_color
           (P.sprintf
              "Please report, this is a bug: Unhandled async exception: %s"
