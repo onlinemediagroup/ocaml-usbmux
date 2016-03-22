@@ -60,7 +60,6 @@ let show_status () =
     let cmds = try (Sys.getenv "MANPAGER") :: cmds with Not_found -> cmds in
     find_cmd cmds
   in
-  let colorize = Usbmux.colored_message ~with_time:false in
   Lwt_main.run begin
     try%lwt
       R.status () >>= fun as_json ->
@@ -75,10 +74,10 @@ let show_status () =
              (uptime /. 60.0 /. 60.0) (uptime /. 60.0))
           (Printf.sprintf "Referencing mapping file at: %s" mapping_file)
           (U.to_list payload |> List.length)
-          ("devices are tunneled, ssh into them with the port numbers printed \
-            below.\nExample:" |> colorize ~message_color:Usbmux.T.White)
-          ("\tssh root@localhost -p <some_port>"
-           |> colorize ~message_color:Usbmux.T.Cyan)
+          ("devices have tunnels ready, if devices are connected then you can \
+            \nssh into them with the port numbers printed \
+            below.\nExample:")
+          ("\tssh root@localhost -p <some_port>")
           (Yojson.Basic.pretty_to_string payload)
       in
       match pager with
