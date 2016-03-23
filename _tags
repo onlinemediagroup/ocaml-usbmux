@@ -43,3 +43,4 @@ true: annot, bin_annot
 <src/app/*.ml{,i,y}>: pkg_yojson
 <src/app/*.ml{,i,y}>: use_usbmux
 # OASIS_STOP
+true: debug

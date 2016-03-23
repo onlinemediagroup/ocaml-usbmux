@@ -32,6 +32,7 @@ depends: [
   "cohttp"
   "lwt" {>= "2.5.1"}
   "ocamlfind" {build}
+  "oasis" {build}
   "plist"
   "stringext"
   "yojson"
