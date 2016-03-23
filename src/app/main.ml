@@ -86,7 +86,8 @@ let begin_program
     do_exit
     log_conns
     log_async_exn
-    log_plugged_inout =
+    log_plugged_inout
+    log_everything_else =
   let starting_place = Sys.getcwd () in
   if do_daemonize then begin
     (* This order matters, must get this done before anything Lwt
@@ -134,10 +135,18 @@ let begin_program
     Usbmux.Logging.(
       if very_loud
       then R.begin_relay
-          ~log_opts:{log_conns=true; log_async_exn=true; log_plugged_inout=true}
-          ~tunnel_timeout ~device_map max_retries
-      else R.begin_relay ~log_opts:{log_conns; log_async_exn; log_plugged_inout }
-          ~tunnel_timeout ~device_map max_retries
+          ~log_opts:{log_conns = true;
+                     log_async_exn = true;
+                     log_plugged_inout = true;
+                     log_everything_else = true;}
+          ~tunnel_timeout
+          ~device_map
+          max_retries
+      else R.begin_relay
+          ~log_opts:{log_conns; log_async_exn; log_plugged_inout; log_everything_else;}
+          ~tunnel_timeout
+          ~device_map
+          max_retries
     )
 
 let entry_point =
@@ -154,7 +163,8 @@ let entry_point =
         $ do_exit
         $ log_connections
         $ log_async_exceptions
-        $ log_plugged_action )
+        $ log_plugged_action
+        $ log_everything_else)
 
 let top_level_info =
   let doc = "Control TCP forwarding for iDevices" in

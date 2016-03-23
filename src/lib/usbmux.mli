@@ -21,7 +21,8 @@ module Logging : sig
 
   type log_opts = { log_conns : bool;
                     log_async_exn : bool;
-                    log_plugged_inout : bool; }
+                    log_plugged_inout : bool;
+                    log_everything_else : bool; }
 
 end
 

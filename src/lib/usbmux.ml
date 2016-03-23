@@ -78,10 +78,20 @@ module Logging = struct
 
   type log_opts = { log_conns : bool;
                     log_async_exn : bool;
-                    log_plugged_inout : bool; }
+                    log_plugged_inout : bool;
+                    log_everything_else : bool; }
+
+  let (conn_section, async_exn, plugged_inout, everything_else) =
+    Lwt_log.Section.make "connections",
+    Lwt_log.Section.make "async_exceptions",
+    Lwt_log.Section.make "plugged_inout",
+    Lwt_log.Section.make "everything_else"
 
   let logging_opts =
-    ref {log_conns = false; log_async_exn = false; log_plugged_inout = false;}
+    ref {log_conns = false;
+         log_async_exn = false;
+         log_plugged_inout = false;
+         log_everything_else = false;}
 
 end
 
@@ -97,6 +107,7 @@ module Protocol = struct
 
   type event = Attached of device_t
              | Detached of int
+
   and device_t = { serial_number : string;
                    connection_speed : int;
                    connection_type : string;

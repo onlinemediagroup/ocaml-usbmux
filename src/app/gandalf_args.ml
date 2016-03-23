@@ -56,3 +56,9 @@ let log_async_exceptions =
 let log_plugged_action =
   let doc = "Log when a device is plugged in and plugged out" in
   Arg.(value & flag & info ["log_plugged_action"] ~doc)
+
+let log_everything_else =
+  let doc = "Log when everything other than \
+             log_{connections,async_exceptions,plugged_actions}"
+  in
+  Arg.(value & flag & info ["log_everything_else"] ~doc)
