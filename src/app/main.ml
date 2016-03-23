@@ -84,9 +84,9 @@ let begin_program
     do_status
     tunnel_timeout
     do_exit
-    do_log_connections
-    do_log_async_exec
-    do_log_plugged_action =
+    log_conns
+    log_async_exn
+    log_plugged_inout =
   let starting_place = Sys.getcwd () in
   if do_daemonize then begin
     (* This order matters, must get this done before anything Lwt
@@ -95,8 +95,6 @@ let begin_program
     (* Might require super user permissions *)
     create_pid_file ()
   end;
-  (* Black magic for the entire running process *)
-  (* if very_loud then Lwt_log.add_rule "*" Lwt_log.Info; *)
 
   if do_exit then R.(perform Shutdown);
 
@@ -113,7 +111,7 @@ let begin_program
 
   if do_status then show_status ();
 
-  (* Now we start spinning up Lwt *)
+  (* Now we start spinning up Lwt threads *)
   match port_pairs with
   | None ->
     if do_daemonize
@@ -133,7 +131,14 @@ let begin_program
       then Printf.sprintf "%s/%s" starting_place device_map
       else device_map
     in
-    R.begin_relay ~tunnel_timeout ~device_map max_retries
+    Usbmux.Logging.(
+      if very_loud
+      then R.begin_relay
+          ~log_opts:{log_conns=true; log_async_exn=true; log_plugged_inout=true}
+          ~tunnel_timeout ~device_map max_retries
+      else R.begin_relay ~log_opts:{log_conns; log_async_exn; log_plugged_inout }
+          ~tunnel_timeout ~device_map max_retries
+    )
 
 let entry_point =
   let open Gandalf_args in

@@ -17,6 +17,14 @@ val platform : unit -> platform Lwt.t
 (** Path to relay's running pid file *)
 val pid_file : string
 
+module Logging : sig
+
+  type log_opts = { log_conns : bool;
+                    log_async_exn : bool;
+                    log_plugged_inout : bool; }
+
+end
+
 (** Module containing types definitions and functions for
     communicating with usbmuxd *)
 module Protocol : sig
@@ -65,6 +73,7 @@ module Relay : sig
 
   (** Create a relay, last int is retries *)
   val begin_relay :
+    ?log_opts:Logging.log_opts ->
     ?stats_server:bool ->
     tunnel_timeout:int ->
     device_map:Lwt_io.file_name -> int -> unit Lwt.t

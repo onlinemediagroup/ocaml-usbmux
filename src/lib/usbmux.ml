@@ -74,6 +74,18 @@ let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog 
   in
   do_start 0 ()
 
+module Logging = struct
+
+  type log_opts = { log_conns : bool;
+                    log_async_exn : bool;
+                    log_plugged_inout : bool; }
+
+  let logging_opts =
+    ref {log_conns = false; log_async_exn = false; log_plugged_inout = false;}
+
+end
+
+
 module Protocol = struct
 
   type msg_version_t = Binary | Plist
@@ -413,10 +425,12 @@ module Relay = struct
     |> Lwt.async
 
   let rec begin_relay
+      ?(log_opts=(!Logging.logging_opts))
       ?(stats_server=true)
       ~tunnel_timeout
       ~device_map
       max_retries =
+    Logging.logging_opts := log_opts;
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
     Lwt_io.set_default_buffer_size 32768;
