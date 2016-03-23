@@ -5,44 +5,6 @@ module P = Usbmux.Protocol
 module R = Usbmux.Relay
 module U = Yojson.Basic.Util
 
-let be_verbose =
-  let doc = "Output Debugging Info" in
-  Arg.(value & flag & info ["v";"verbose"] ~doc)
-
-let forward_connection_file =
-  let doc = "Simple file mapping udid to ports, expecting a file \
-             like 123gfdgefrgt234:2000:22"
-  in
-  Arg.(value & opt (some non_dir_file) None & info ["m"; "mappings"] ~doc)
-
-let do_daemonize =
-  let doc = "Whether$(b, $(tname)) should run as a daemon" in
-  Arg.(value & flag & info ["d";"daemonize"] ~doc)
-
-let do_exit =
-  let doc = "Gracefully exit current running relay" in
-  Arg.(value & flag & info ["e";"exit"] ~doc)
-
-let retry_count =
-  let doc = "How many times to retry action" in
-  Arg.(value & opt int 3 & info ["t"; "tries"] ~doc)
-
-let tunneling_timeout =
-  let doc = "How many seconds $(b, $(tname)) will wait on \
-             inactivity on the tunnel before closing the tunnel"
-  in
-  Arg.(value & opt int (60 * 5) & info ["o";"timeout"] ~doc)
-
-let reload_mapping =
-  let doc = "Stop running threads and reload the mappings \
-             from the original mapping file path."
-  in
-  Arg.(value & flag & info ["r";"reload"] ~doc)
-
-let status =
-  let doc = "Pretty print json of currently tunneled devices" in
-  Arg.(value & flag & info ["s";"status"] ~doc)
-
 (* Ripped from cmdliner *)
 let find_cmd cmds =
   let test, null = match Sys.os_type with
@@ -114,14 +76,17 @@ let create_pid_file () =
   )
 
 let begin_program
-    debug
+    very_loud
     port_pairs
     do_daemonize
     max_retries
     do_reload_mapping
     do_status
     tunnel_timeout
-    do_exit =
+    do_exit
+    do_log_connections
+    do_log_async_exec
+    do_log_plugged_action =
   let starting_place = Sys.getcwd () in
   if do_daemonize then begin
     (* This order matters, must get this done before anything Lwt
@@ -131,7 +96,7 @@ let begin_program
     create_pid_file ()
   end;
   (* Black magic for the entire running process *)
-  if debug then Lwt_log.add_rule "*" Lwt_log.Info;
+  (* if very_loud then Lwt_log.add_rule "*" Lwt_log.Info; *)
 
   if do_exit then R.(perform Shutdown);
 
@@ -171,6 +136,7 @@ let begin_program
     R.begin_relay ~tunnel_timeout ~device_map max_retries
 
 let entry_point =
+  let open Gandalf_args in
   Term.(pure
           begin_program
         $ be_verbose
@@ -180,12 +146,15 @@ let entry_point =
         $ reload_mapping
         $ status
         $ tunneling_timeout
-        $ do_exit )
+        $ do_exit
+        $ log_connections
+        $ log_async_exceptions
+        $ log_plugged_action )
 
 let top_level_info =
   let doc = "Control TCP forwarding for iDevices" in
   let man = [`S "DESCRIPTION";
-             `P "$(b, $(tname)) lets you port forward local ports to specific \
+             `P "$(b,$(tname)) lets you port forward local ports to specific \
                  ports on your jailbroken iDevices like iPhone, iPad, iTouch \
                  over USB; think about the ssh use-case.  You need to \
                  have the usbmuxd daemon running, on OS X this means you \
@@ -195,24 +164,24 @@ let top_level_info =
              `P "1) See with realtime updates what devices are connected \
                  This will start up gandalf in listen mode, that is it \
                  will print out whenver a device connects or disconnects";
-             `Pre "$(b, $(tname))";
+             `Pre "$(b,$(tname))";
              `P "2) Start with a mapping file which is of the form \
                  <udid>:<local_port>:<device_port>, the # character \
                  starts comments.";
-             `Pre "$(b, $(tname)) -m mapping_file";
-             `P "2.1) Daemonize $(b, $(tname)) with the -d flag. *NOTE*: You \
-                 might need to end up doing that under sudo as $(b, $(tname)) \
+             `Pre "$(b,$(tname)) -m mapping_file";
+             `P "2.1) Daemonize $(b,$(tname)) with the -d flag. *NOTE*: You \
+                 might need to end up doing that under sudo as $(b,$(tname)) \
                  needs to make a pid file under /var/run. If daemonizing \
                  is failing, try running as root. After daemonzing, \
                  check the system log for debugging info";
              `P "3) See a pretty JSON representation of devices and \
                  their ports that are currently connected.";
-             `Pre "$(b, $(tname)) -s";
-             `P "4) Reload $(b, $(tname)) with a new set of mappings";
-             `Pre "$(b, $(tname)) -r";
-             `P "5) Cleanly exit $(b, $(tname)), note this might require\
+             `Pre "$(b,$(tname)) -s";
+             `P "4) Reload $(b,$(tname)) with a new set of mappings";
+             `Pre "$(b,$(tname)) -r";
+             `P "5) Cleanly exit $(b,$(tname)), note this might require\
                  super user permissions.";
-             `Pre "$(b, $(tname)) -e";
+             `Pre "$(b,$(tname)) -e";
              `S "GUIDELINE";
              `P "Be sure to check your system log for valuable \
                  debugging information, especially with -v";
