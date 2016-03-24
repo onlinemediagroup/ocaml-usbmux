@@ -9,6 +9,7 @@ homepage: "https://github.com/onlinemediagroup/ocaml-usbmux"
 dev-repo: "https://github.com/onlinemediagroup/ocaml-usbmux.git"
 bug-reports: "https://github.com/onlinemediagroup/ocaml-usbmux/issues"
 build: [
+  ["oasis" "setup"]
   ["ocaml" "setup.ml" "-configure" "--prefix" prefix]
   ["ocaml" "setup.ml" "-build"]
 ]
@@ -22,17 +23,17 @@ depexts: [
   [["ubuntu"] ["usbmuxd"]]
 ]
 build-test: [
+  ["oasis" "setup"]
   ["ocaml" "setup.ml" "-configure" "--enable-tests"]
   ["ocaml" "setup.ml" "-build"]
   ["ocaml" "setup.ml" "-test"]
 ]
 depends: [
-  "ANSITerminal"
   "cmdliner" {build}
   "cohttp"
   "lwt" {>= "2.5.1"}
   "ocamlfind" {build}
-  "oasis" {build}
+  "oasis" {build & >= "0.4"}
   "plist"
   "stringext"
   "yojson"
