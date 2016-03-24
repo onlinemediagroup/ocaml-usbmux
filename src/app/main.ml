@@ -70,7 +70,7 @@ let create_pid_file () =
         "Couldn't open pid file %s, make sure you have right permissions"
         Usbmux.pid_file
       |> prerr_endline;
-      exit 2
+      exit 4
   )
 
 let begin_program
@@ -103,7 +103,7 @@ let begin_program
         (Printf.sprintf "Could not open pid file, are you sure gandalf was \
                          already running?")
         |> prerr_endline;
-        exit 6
+        exit 5
   end;
 
   if do_status then show_status ();
@@ -143,8 +143,7 @@ let begin_program
                      log_plugged_inout; log_everything_else;}
     )
 
-let entry_point =
-  let open Gandalf_args in
+let entry_point = let open Gandalf_args in
   Term.(pure
           begin_program
         $ be_verbose
@@ -187,14 +186,20 @@ let top_level_info =
              `Pre "$(b,$(tname)) -s";
              `P "4) Reload $(b,$(tname)) with a new set of mappings";
              `Pre "$(b,$(tname)) -r";
-             `P "5) Cleanly exit $(b,$(tname)), note this might require\
+             `P "5) Cleanly exit $(b,$(tname)), note this might require \
                  super user permissions.";
              `Pre "$(b,$(tname)) -e";
              `S "GUIDELINE";
              `P "Be sure to check your system log for valuable \
                  debugging information, especially with -v";
+             `S "EXIT CODES";
+             `P "1 -> Exited because of an unhandled async exception";
+             `P "2 -> Exited because couldn't reload mapping or couldn't shutdown cleanly";
+             `P "3 -> Exited because relay was already running according to pid file";
+             `P "4 -> Exited because of permissions, couldn't open pid file";
+             `P "5 -> Check if $(b,$(tname)) was already running";
              `S "AUTHOR";
-             `P "Edgar Aroutiounian"]
+             `P "Edgar Aroutiounian <edgar.factorial@gmail.com>"]
   in
   Term.info "gandalf" ~version:"1.1.0" ~doc ~man
 

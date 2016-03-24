@@ -23,6 +23,26 @@ module Logging = struct
 
   let () = Lwt_log.add_rule "*" Lwt_log.Info
 
+  let log
+      (event : [`exn of exn | `misc | `plugged_inout | `tunnel])
+      message
+    = Lwt_log.(
+        match event with
+        | `exn exn ->
+          if !logging_opts.log_async_exn
+          (* This should produce a backtrace as well *)
+          then ign_info ~exn ~section:async_exn message
+        | `misc ->
+          if !logging_opts.log_everything_else
+          then ign_info ~section:everything_else message
+        | `plugged_inout ->
+          if !logging_opts.log_plugged_inout
+          then ign_info ~section:plugged_inout message
+        | `tunnel ->
+          if !logging_opts.log_conns
+          then ign_info ~section:conn_section message
+      )
+
 end
 
 let byte_swap_16 value =
@@ -232,50 +252,35 @@ module Relay = struct
           Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
           match parse_reply buffer with
           | Result Success ->
-            Logging.(
-              if !logging_opts.log_conns
-              then (
-                Lwt_log.ign_info_f
-                  ~section:conn_section
-                  "Tunneling. Udid: %s Local Port: %d Device Port: %d \
-                   Device_id: %d" udid port device_port device_id);
-              (* Provide the tunneling with a partial function *)
-              let e = echo tunnel_timeout in
-              e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
-              if !logging_opts.log_conns
-              then
-                Lwt_log.info_f
-                  ~section:conn_section
-                  "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
-                   Device_id: %d" udid port device_port device_id
-              else Lwt.return_unit
+            P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
+                       Device_id: %d" udid port device_port device_id
+            |> Logging.log `tunnel;
+            (* Provide the tunneling with a partial function *)
+            let e = echo tunnel_timeout in
+            e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
+            Lwt.return (
+              P.sprintf "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+                         Device_id: %d" udid port device_port device_id
+              |> Logging.log `tunnel
             )
           | Result Device_requested_not_connected ->
-            Logging.(
-              if !logging_opts.log_everything_else
-              then
-                Lwt_log.log_f
-                  ~level:Lwt_log.Info
-                  ~section:everything_else
-                  "Tunneling: Device requested was not connected. \
-                   Udid: %s Device_id: %d" udid device_id
-              else Lwt.return_unit
-            )
+            P.sprintf "Tunneling: Device requested was not connected. \
+                       Udid: %s Device_id: %d" udid device_id
+            |> Logging.log `misc
+            |> Lwt.return
           | Result Port_requested_not_available ->
-            Logging.(
-              if !logging_opts.log_everything_else
-              then
-                Lwt_log.log_f
-                  ~level:Lwt_log.Info
-                  ~section:everything_else
-                  "Tunneling. Port requested, %d, wasn't available. \
-                   Udid: %s Port: %d Device_id: %d"
-                  device_port udid port device_id
-              else Lwt.return_unit
-            )
+            P.sprintf "Tunneling. Port requested, %d, wasn't available. \
+                       Udid: %s Port: %d Device_id: %d"
+              device_port udid port device_id
+            |> Logging.log `misc
+            |> Lwt.return
           | _ -> Lwt.return_unit
         end
-        (* Finished tunneling, now cleanly close the chans *)
+        (* Finished tunneling, now ensures that we close the
+           chans. This can rarely throw a lazy value exception that is
+           caught in the async hook exception handler, happens
+           with_connection and establish_server themselves have their
+           own lazy logic to close the sockets *)
         >>= close_chans (tcp_ic, tcp_oc)
         |> Lwt.ignore_result
       end
@@ -287,45 +292,29 @@ module Relay = struct
   let complete_shutdown () =
     (* Kill the servers first *)
     running_servers |> Hashtbl.iter (fun _ tunnel -> Lwt_io.shutdown_server tunnel);
-    Lwt_log.ign_info_f
-      "Completed shutting down %d servers" (Hashtbl.length running_servers);
+    P.sprintf "Completed shutting down %d servers" (Hashtbl.length running_servers)
+    |> Logging.log `misc;
     Hashtbl.reset running_servers
 
   (* Note that this won't exit the program unless exit is explicitly
      called *)
   let () =
-    Lwt.async_exception_hook := function
-      | Lwt.Canceled ->
-        Logging.(
-          if !logging_opts.log_everything_else
-          then
-            Lwt_log.ign_info
-              ~section:everything_else
-              "A ssh connection timed out"
-        )
-      | Unix.Unix_error (UnixLabels.ENOTCONN, _, _) ->
-        Logging.(
-          if !logging_opts.log_everything_else
-          then Lwt_log.ign_info ~section:everything_else "Connection refused"
-        )
-      | Unix.Unix_error(Unix.EADDRINUSE, _, _) ->
-        Logging.(
-          if !logging_opts.log_everything_else
-          then
-            Lwt_log.ign_info
-              ~section:everything_else
-              "Check if already running tunneling relay, probably are"
-        )
-      | exn ->
-        Logging.(
-          if !logging_opts.log_async_exn
-          then
-            Lwt_log.ign_info
-              ~exn
-              ~section:async_exn
-              "Please report, this is an unhandled async exception (A bug)"
-        );
-        exit 4
+    Logging.(
+      Unix.(
+        Lwt.async_exception_hook := function
+          | Lwt.Canceled -> log `misc "A ssh connection timed out"
+          | Unix_error (ENOTCONN, _, _) -> log `misc "Connection refused"
+          | Unix_error (EADDRINUSE, _, _) ->
+            log `misc "Check if already running tunneling relay, probably are"
+          | CamlinternalLazy.Undefined ->
+            "(Safe to ignore) OCaml lazy value exception from TCP tunneling"
+            |> log `misc
+          | exn ->
+            "Please report, this is an unhandled async exception (A bug)"
+            |> log (`exn exn);
+            exit 1
+      )
+    )
 
   let device_alist_of_hashtable ~device_mapping ~devices =
     Hashtbl.fold begin fun device_id_key udid_value accum ->
@@ -334,8 +323,8 @@ module Relay = struct
         (udid_value, (from_port, to_port, device_id_key)) :: accum
       with
         Not_found ->
-        Lwt_log.ign_info_f
-          "Device with udid: %s expected but wasn't connected" udid_value;
+        P.sprintf "Device with udid: %s expected but wasn't connected" udid_value
+        |> Logging.log `misc;
         accum
     end
       devices []
@@ -376,26 +365,16 @@ module Relay = struct
           (device_udid, (port, device_port, new_id)) |> do_tunnel !relay_timeout
         with
           Not_found ->
-          Logging.(
-            if !logging_opts.log_everything_else
-            then
-              Lwt_log.info_f
-                ~section:everything_else
-                "relay can't create tunnel for device udid: %s" device_udid
-            else Lwt.return_unit
-          )
+          P.sprintf "relay can't create tunnel for device udid: %s" device_udid
+          |> Logging.log `misc
+          |> Lwt.return
       in
       Protocol.(create_listener ~event_cb:begin function
           | Event Attached { serial_number = s; connection_speed = _;
                              connection_type = _; product_id = _;
                              location_id = _; device_id = d; } ->
-            Logging.(
-              if !logging_opts.log_plugged_inout
-              then
-                Lwt_log.ign_info_f
-                  ~section:plugged_inout
-                  "Device %d with serial number: %s connected" d s
-            );
+            P.sprintf "Device %d with serial number: %s connected" d s
+            |> Logging.log `plugged_inout;
             if not (Hashtbl.mem devices d)
             then
               (* Two cases, devices that have been known or unknown devices *)
@@ -406,13 +385,8 @@ module Relay = struct
             else
               Lwt.return ()
           | Event Detached d ->
-            Logging.(
-              if !logging_opts.log_plugged_inout
-              then
-                Lwt_log.ign_info_f
-                  ~section:plugged_inout
-                  "Device %d disconnected" d
-            );
+            P.sprintf "Device %d disconnected" d
+            |> Logging.log `plugged_inout;
             load_mappings !mapping_file >|= fun device_mapping ->
             Hashtbl.remove devices d;
             shutdown_and_prune d;
@@ -494,10 +468,7 @@ module Relay = struct
   and do_restart tunnel_timeout =
     if Sys.file_exists !mapping_file then begin
       complete_shutdown ();
-      Logging.(
-        if !logging_opts.log_everything_else
-        then Lwt_log.ign_info ~section:everything_else "Restarting relay with reloaded mappings"
-      );
+      Logging.log `misc "Restarting relay with reloaded mappings";
       (* Spin it up again *)
       begin_relay
         (* Use existing status server *)
@@ -507,13 +478,9 @@ module Relay = struct
         ~device_map:!mapping_file
       |> Lwt.ignore_result
     end else
-      Logging.(
-        if !logging_opts.log_everything_else
-        then Lwt_log.ign_info_f
-            ~section:everything_else
-            "Original mapping file %s does not exist \
-             anymore, not reloading" !mapping_file
-      )
+      P.sprintf "Original mapping file %s does not exist \
+                 anymore, not reloading" !mapping_file
+      |> Logging.log `misc
 
   (* Mutually recursive function, handle_signals needs name of
      begin_relay and begin_relay needs the name handle_signals *)
@@ -528,14 +495,9 @@ module Relay = struct
         signal sigusr2 (Signal_handle begin fun _ ->
             let relay_count = Hashtbl.length running_servers in
             complete_shutdown ();
-            Logging.(
-              if !logging_opts.log_everything_else
-              then
-                Lwt_log.ign_info_f
-                  ~section:everything_else
-                  "Shutdown %d relays, exiting now" relay_count;
-              exit 0
-            )
+            P.sprintf "Shutdown %d relays, exiting now" relay_count
+            |> Logging.log `misc;
+            exit 0
           end);
         (* Handle plain kill from command line *)
         signal sigterm (Signal_handle (fun _ -> complete_shutdown (); exit 0))
@@ -555,24 +517,16 @@ module Relay = struct
         exit 0
       with
         Unix_error(EPERM, _, _) ->
-        Logging.(
-          if !logging_opts.log_everything_else
-          then
-            Lwt_log.ign_error ~section:everything_else
-              (match action with Reload -> "Couldn't reload mapping, permissions error"
-                               | Shutdown -> "Couldn't shutdown cleanly, \
-                                              permissions error");
-          exit 3
-        )
+        (match action with Reload -> "Couldn't reload mapping, permissions error"
+                         | Shutdown -> "Couldn't shutdown cleanly, \
+                                        permissions error")
+        |> Logging.log `misc;
+        exit 2
       | Unix_error(ESRCH, _, _) ->
-        Logging.(
-          if !logging_opts.log_everything_else
-          then
-            Lwt_log.ign_error_f ~section:everything_else
-              "Are you sure relay was running already? \
-               Pid in %s did not match running relay " pid_file;
-          exit 5
-        )
+        P.sprintf "Are you sure relay was running already? \
+                   Pid in %s did not match running relay " pid_file
+        |> Logging.log `misc;
+        exit 3
     )
 
   let status () =

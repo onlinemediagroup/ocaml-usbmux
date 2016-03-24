@@ -55,6 +55,6 @@ let log_plugged_action =
 
 let log_everything_else =
   let doc = "Log when everything other than \
-             log_{connections,async_exceptions,plugged_actions}"
+             log_{connections, async_exceptions, plugged_actions}"
   in
   Arg.(value & flag & info ["log_everything_else"] ~doc)
