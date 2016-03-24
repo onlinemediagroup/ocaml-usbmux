@@ -22,6 +22,8 @@ Library usbmux
   Modules:      Usbmux
   install: true
   CompiledObject: native
+  NativeOpt: -g
+  ByteOpt: -g
   BuildDepends:
     lwt.unix (>= 2.5.1), lwt.ppx, plist,
     yojson, stringext, cohttp.lwt
@@ -32,6 +34,8 @@ Executable gandalf
   install: true
   MainIs: main.ml
   CompiledObject: native
+  NativeOpt: -g
+  ByteOpt: -g
   BuildDepends: cmdliner, usbmux
 
 SourceRepository master

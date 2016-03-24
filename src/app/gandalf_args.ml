@@ -3,8 +3,8 @@ open Cmdliner
 let be_verbose =
   let doc =
     "Loudest logging setting, equivalent to turning on \
-     log_connections, log_async_exceptions and \
-     log_plugged_action"
+     log_connections, log_async_exceptions, \
+     log_plugged_action and log_everything_else"
   in
   Arg.(value & flag & info ["v";"verbose"] ~doc)
 
@@ -21,10 +21,6 @@ let do_daemonize =
 let do_exit =
   let doc = "Gracefully exit current running relay" in
   Arg.(value & flag & info ["e";"exit"] ~doc)
-
-let retry_count =
-  let doc = "How many times to retry action" in
-  Arg.(value & opt int 3 & info ["t"; "tries"] ~doc)
 
 let tunneling_timeout =
   let doc = "How many seconds $(b,$(tname)) will wait on \

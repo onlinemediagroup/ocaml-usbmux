@@ -51,8 +51,7 @@ let show_status () =
         Sys.command (Printf.sprintf "%s %s" p f_name) |> ignore;
         Lwt_unix.unlink f_name
     with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
-      Usbmux.error_with_color "Couldn't get status, check if gandalf is running"
-      |> Lwt_io.printl
+      Lwt_io.printl "Couldn't get status, check if gandalf is running"
   end;
   exit 0
 
@@ -70,7 +69,6 @@ let create_pid_file () =
       Printf.sprintf
         "Couldn't open pid file %s, make sure you have right permissions"
         Usbmux.pid_file
-      |> Usbmux.error_with_color
       |> prerr_endline;
       exit 2
   )
@@ -79,7 +77,6 @@ let begin_program
     very_loud
     port_pairs
     do_daemonize
-    max_retries
     do_reload_mapping
     do_status
     tunnel_timeout
@@ -93,21 +90,20 @@ let begin_program
     (* This order matters, must get this done before anything Lwt
        related *)
     Lwt_daemon.daemonize ~syslog:true ();
+    (* Ensure daemon has time to setup *)
+    Unix.sleep 1;
     (* Might require super user permissions *)
     create_pid_file ()
   end;
-
   if do_exit then R.(perform Shutdown);
-
   begin
     if do_reload_mapping then
       try R.(perform Reload)
       with Sys_error _ ->
-        (Usbmux.error_with_color
-           (Printf.sprintf "Could not open pid file, are you sure gandalf was \
-                            already running?")
-         |> prerr_endline;
-         exit 6)
+        (Printf.sprintf "Could not open pid file, are you sure gandalf was \
+                         already running?")
+        |> prerr_endline;
+        exit 6
   end;
 
   if do_status then show_status ();
@@ -116,16 +112,16 @@ let begin_program
   match port_pairs with
   | None ->
     if do_daemonize
-    then Usbmux.error_with_color "Warning: Only in listen mode, not daemonizing"
-         |> prerr_endline;
-    P.(create_listener ~max_retries ~event_cb:begin function
+    then "Warning: Only in listen mode, not daemonizing" |> prerr_endline;
+    P.(create_listener ~event_cb:begin function
         | Event Attached { serial_number = s; connection_speed = _;
                            connection_type = _; product_id = _; location_id = _;
                            device_id = d; } ->
           Lwt_io.printlf "Device %d with serial number: %s connected" d s
         | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
         | _ -> Lwt.return ()
-      end)
+      end
+        ())
   | Some device_map ->
     let device_map =
       if Filename.is_relative device_map
@@ -133,20 +129,18 @@ let begin_program
       else device_map
     in
     Usbmux.Logging.(
+      let relay_with =
+        R.begin_relay ~stats_server:true ~tunnel_timeout ~device_map
+      in
       if very_loud
-      then R.begin_relay
+      then relay_with
           ~log_opts:{log_conns = true;
                      log_async_exn = true;
                      log_plugged_inout = true;
                      log_everything_else = true;}
-          ~tunnel_timeout
-          ~device_map
-          max_retries
-      else R.begin_relay
-          ~log_opts:{log_conns; log_async_exn; log_plugged_inout; log_everything_else;}
-          ~tunnel_timeout
-          ~device_map
-          max_retries
+      else relay_with
+          ~log_opts:{log_conns; log_async_exn;
+                     log_plugged_inout; log_everything_else;}
     )
 
 let entry_point =
@@ -156,7 +150,6 @@ let entry_point =
         $ be_verbose
         $ forward_connection_file
         $ do_daemonize
-        $ retry_count
         $ reload_mapping
         $ status
         $ tunneling_timeout

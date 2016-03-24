@@ -1,19 +1,3 @@
-module T = ANSITerminal
-
-(** What platform name *)
-type platform = Linux | Darwin
-
-(** Shell colored string with possibility of timestamp *)
-val colored_message :
-  ?time_color:T.color ->
-  ?message_color:T.color -> ?with_time:bool -> string -> string
-
-(** Default coloring for a error string *)
-val error_with_color : string -> string
-
-(** Get the current platform *)
-val platform : unit -> platform Lwt.t
-
 (** Path to relay's running pid file *)
 val pid_file : string
 
@@ -62,7 +46,7 @@ module Protocol : sig
   (** Creates a listener waiting for events, ie connections and
       disconnections *)
   val create_listener :
-    ?event_cb:(msg_t -> unit Lwt.t) -> max_retries:int -> unit Lwt.t
+    ?event_cb:(msg_t -> unit Lwt.t) -> unit -> unit Lwt.t
 
 end
 
@@ -77,7 +61,8 @@ module Relay : sig
     ?log_opts:Logging.log_opts ->
     ?stats_server:bool ->
     tunnel_timeout:int ->
-    device_map:Lwt_io.file_name -> int -> unit Lwt.t
+    device_map:Lwt_io.file_name ->
+    unit Lwt.t
 
   (** Perform an action on a relay *)
   val perform : action -> unit

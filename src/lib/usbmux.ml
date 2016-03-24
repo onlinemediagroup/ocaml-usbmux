@@ -1,78 +1,8 @@
 open Lwt.Infix
 
-module T = ANSITerminal
 module B = Yojson.Basic
 module U = Yojson.Basic.Util
 module P = Printf
-
-type platform = Linux | Darwin
-
-let platform_of_string = function | "Darwin" -> Darwin | _ -> Linux
-
-let current_platform = ref Linux
-
-let byte_swap_16 value =
-  ((value land 0xFF) lsl 8) lor ((value lsr 8) land 0xFF)
-
-let time_now () =
-  Unix.(
-    let localtime = localtime (time ()) in
-    P.sprintf "[%02u:%02u:%02u]"
-      localtime.tm_hour localtime.tm_min localtime.tm_sec)
-
-let colored_message
-    ?(time_color=T.Yellow)
-    ?(message_color=T.Blue)
-    ?(with_time=true)
-    str =
-  let just_time = T.sprintf [T.Foreground time_color] "%s " (time_now ()) in
-  let just_message = T.sprintf [T.Foreground message_color] "%s" str in
-  if with_time then just_time ^ just_message else just_message
-
-let error_with_color msg =
-  colored_message ~time_color:T.White ~message_color:T.Red msg
-
-let log_info_bad ?exn msg = match !current_platform with
-  | Darwin -> error_with_color msg |> Lwt_log.ign_info ?exn
-  | Linux -> msg |> Lwt_log.ign_info ?exn
-
-let log_info_success msg = match !current_platform with
-  | Darwin ->
-    colored_message ~time_color:T.White ~message_color:T.Yellow msg
-    |> Lwt_log.ign_info
-  | Linux -> msg |> Lwt_log.ign_info
-
-let platform () =
-  Lwt_process.(pread_line (shell "uname") >|= platform_of_string)
-
-let pid_file = "/var/run/gandalf.pid"
-
-let with_retries ?(wait_between_failure=1.0) ?(max_retries=3) ?exn_handler prog =
-  assert (max_retries > 0 && max_retries < 20);
-  assert (wait_between_failure > 0.0 && wait_between_failure < 10.0);
-  let rec do_start current_count () =
-    if current_count = max_retries
-    then Lwt_io.printlf "Tried %d times and gave up" current_count
-    else begin
-      Lwt.catch
-        prog
-        (match exn_handler with Some f -> f | None -> Unix.(function
-             | Unix_error _ as e ->
-               log_info_bad
-                 (P.sprintf "Attempt %d, %s failed"
-                    (current_count + 1)
-                    (Printexc.to_string e));
-               Lwt_unix.sleep wait_between_failure >>=
-               do_start (current_count + 1)
-             | Lwt.Canceled -> Lwt.return_unit
-             | exn ->
-               log_info_bad ~exn (P.sprintf "Attempt %d" (current_count + 1));
-               Lwt_unix.sleep wait_between_failure >>=
-               do_start (current_count + 1)
-           ))
-    end
-  in
-  do_start 0 ()
 
 module Logging = struct
 
@@ -88,13 +18,24 @@ module Logging = struct
     Lwt_log.Section.make "everything_else"
 
   let logging_opts =
-    ref {log_conns = false;
-         log_async_exn = false;
-         log_plugged_inout = false;
-         log_everything_else = false;}
+    ref {log_conns = false; log_async_exn = false;
+         log_plugged_inout = false; log_everything_else = false;}
+
+  let () = Lwt_log.add_rule "*" Lwt_log.Info
 
 end
 
+let byte_swap_16 value =
+  ((value land 0xFF) lsl 8) lor ((value lsr 8) land 0xFF)
+
+let time_now () =
+  Unix.(
+    let localtime = localtime (time ()) in
+    P.sprintf "[%02u:%02u:%02u]"
+      localtime.tm_hour localtime.tm_min localtime.tm_sec
+  )
+
+let pid_file = "/var/run/gandalf.pid"
 
 module Protocol = struct
 
@@ -182,29 +123,27 @@ module Protocol = struct
       | "Detached" -> Event (Detached (member "DeviceID" handle |> to_int))
       | otherwise -> raise (Unknown_reply otherwise))
 
-  let create_listener ?event_cb ~max_retries =
-    with_retries ~max_retries begin fun () ->
-      Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
-        (* Send the header for our listen message *)
-        write_header ~total_len:listen_msg_len mux_oc >>
-        ((String.length listen_message)
-         |> Lwt_io.write_from_string_exactly mux_oc listen_message 0) >>
+  let create_listener ?event_cb () =
+    Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
+      (* Send the header for our listen message *)
+      write_header ~total_len:listen_msg_len mux_oc >>
+      ((String.length listen_message)
+       |> Lwt_io.write_from_string_exactly mux_oc listen_message 0) >>
+      read_header mux_ic >>= fun (msg_len, _, _, _) ->
+      let buffer = Bytes.create (msg_len - header_length) in
+
+      let rec start_listening () =
         read_header mux_ic >>= fun (msg_len, _, _, _) ->
         let buffer = Bytes.create (msg_len - header_length) in
-
-        let rec start_listening () =
-          read_header mux_ic >>= fun (msg_len, _, _, _) ->
-          let buffer = Bytes.create (msg_len - header_length) in
-          Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
-          match event_cb with
-          | None -> start_listening ()
-          | Some g -> g (parse_reply buffer) >>= start_listening
-        in
         Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
         match event_cb with
         | None -> start_listening ()
         | Some g -> g (parse_reply buffer) >>= start_listening
-      end
+      in
+      Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
+      match event_cb with
+      | None -> start_listening ()
+      | Some g -> g (parse_reply buffer) >>= start_listening
     end
 
 end
@@ -293,24 +232,47 @@ module Relay = struct
           Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
           match parse_reply buffer with
           | Result Success ->
-            (P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
-                        Device_id: %d" udid port device_port device_id)
-            |> log_info_success;
-            (* Provide the tunneling with a partial *)
-            let e = echo tunnel_timeout in
-            e tcp_ic mux_oc <&> e mux_ic tcp_oc >|= fun () ->
-            ((P.sprintf "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
-                         Device_id: %d" udid port device_port device_id)
-             |> log_info_success)
+            Logging.(
+              if !logging_opts.log_conns
+              then (
+                Lwt_log.ign_info_f
+                  ~section:conn_section
+                  "Tunneling. Udid: %s Local Port: %d Device Port: %d \
+                   Device_id: %d" udid port device_port device_id);
+              (* Provide the tunneling with a partial function *)
+              let e = echo tunnel_timeout in
+              e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
+              if !logging_opts.log_conns
+              then
+                Lwt_log.info_f
+                  ~section:conn_section
+                  "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+                   Device_id: %d" udid port device_port device_id
+              else Lwt.return_unit
+            )
           | Result Device_requested_not_connected ->
-            (P.sprintf "Tunneling: Device requested was not connected. \
-                        Udid: %s Device_id: %d" udid device_id)
-            |> log_info_bad |> Lwt.return
+            Logging.(
+              if !logging_opts.log_everything_else
+              then
+                Lwt_log.log_f
+                  ~level:Lwt_log.Info
+                  ~section:everything_else
+                  "Tunneling: Device requested was not connected. \
+                   Udid: %s Device_id: %d" udid device_id
+              else Lwt.return_unit
+            )
           | Result Port_requested_not_available ->
-            (P.sprintf "Tunneling. Port requested, %d, wasn't available. \
-                        Udid: %s Port: %d Device_id: %d"
-               device_port udid port device_id)
-            |> log_info_bad |> Lwt.return
+            Logging.(
+              if !logging_opts.log_everything_else
+              then
+                Lwt_log.log_f
+                  ~level:Lwt_log.Info
+                  ~section:everything_else
+                  "Tunneling. Port requested, %d, wasn't available. \
+                   Udid: %s Port: %d Device_id: %d"
+                  device_port udid port device_id
+              else Lwt.return_unit
+            )
           | _ -> Lwt.return_unit
         end
         (* Finished tunneling, now cleanly close the chans *)
@@ -333,24 +295,36 @@ module Relay = struct
      called *)
   let () =
     Lwt.async_exception_hook := function
-      | Lwt.Canceled -> log_info_bad "A ssh connection timed out";
-      | Unix.Unix_error(UnixLabels.ENOTCONN, _, _) ->
-        log_info_bad "Connection refused"
+      | Lwt.Canceled ->
+        Logging.(
+          if !logging_opts.log_everything_else
+          then
+            Lwt_log.ign_info
+              ~section:everything_else
+              "A ssh connection timed out"
+        )
+      | Unix.Unix_error (UnixLabels.ENOTCONN, _, _) ->
+        Logging.(
+          if !logging_opts.log_everything_else
+          then Lwt_log.ign_info ~section:everything_else "Connection refused"
+        )
       | Unix.Unix_error(Unix.EADDRINUSE, _, _) ->
-        "Check if already running tunneling relay, probably are"
-        |> error_with_color
-        |> prerr_endline;
-      | e ->
-        Printexc.get_callstack 5
-        |> Printexc.raw_backtrace_to_string
-        |> error_with_color
-        |> prerr_endline;
-
-        error_with_color
-          (P.sprintf
-             "Please report, this is a bug: Unhandled async exception: %s"
-             (Printexc.to_string e))
-        |> prerr_endline;
+        Logging.(
+          if !logging_opts.log_everything_else
+          then
+            Lwt_log.ign_info
+              ~section:everything_else
+              "Check if already running tunneling relay, probably are"
+        )
+      | exn ->
+        Logging.(
+          if !logging_opts.log_async_exn
+          then
+            Lwt_log.ign_info
+              ~exn
+              ~section:async_exn
+              "Please report, this is an unhandled async exception (A bug)"
+        );
         exit 4
 
   let device_alist_of_hashtable ~device_mapping ~devices =
@@ -402,17 +376,26 @@ module Relay = struct
           (device_udid, (port, device_port, new_id)) |> do_tunnel !relay_timeout
         with
           Not_found ->
-          P.sprintf
-            "relay can't create tunnel for device udid: %s" device_udid
-          |> log_info_bad
-          |> Lwt.return
+          Logging.(
+            if !logging_opts.log_everything_else
+            then
+              Lwt_log.info_f
+                ~section:everything_else
+                "relay can't create tunnel for device udid: %s" device_udid
+            else Lwt.return_unit
+          )
       in
-      Protocol.(create_listener ~max_retries:3 ~event_cb:begin function
+      Protocol.(create_listener ~event_cb:begin function
           | Event Attached { serial_number = s; connection_speed = _;
                              connection_type = _; product_id = _;
                              location_id = _; device_id = d; } ->
-            (Printf.sprintf "Device %d with serial number: %s connected" d s)
-            |> log_info_success;
+            Logging.(
+              if !logging_opts.log_plugged_inout
+              then
+                Lwt_log.ign_info_f
+                  ~section:plugged_inout
+                  "Device %d with serial number: %s connected" d s
+            );
             if not (Hashtbl.mem devices d)
             then
               (* Two cases, devices that have been known or unknown devices *)
@@ -423,15 +406,22 @@ module Relay = struct
             else
               Lwt.return ()
           | Event Detached d ->
-            Printf.sprintf "Device %d disconnected" d |> log_info_success;
+            Logging.(
+              if !logging_opts.log_plugged_inout
+              then
+                Lwt_log.ign_info_f
+                  ~section:plugged_inout
+                  "Device %d disconnected" d
+            );
             load_mappings !mapping_file >|= fun device_mapping ->
             Hashtbl.remove devices d;
             shutdown_and_prune d;
             device_list := device_alist_of_hashtable ~device_mapping ~devices
           | _ -> Lwt.return_unit
-        end)
+        end
+          ())
     end;
-    (* Server also gets its own thread *)
+    (* Status server also gets its own thread *)
     (fun () -> Cohttp_lwt_unix.Server.create ~mode:(`TCP (`Port 5000)) server)
     |> Lwt.async
 
@@ -439,8 +429,8 @@ module Relay = struct
       ?(log_opts=(!Logging.logging_opts))
       ?(stats_server=true)
       ~tunnel_timeout
-      ~device_map
-      max_retries =
+      ~device_map =
+    (* Set the logging options *)
     Logging.logging_opts := log_opts;
     (* Ask for larger internal buffers for Lwt_io function rather than
        the default of 4096 *)
@@ -455,90 +445,97 @@ module Relay = struct
 
     (* Setup the signal handlers, needed so that we know when to
        reload, shutdown, etc. *)
-    handle_signals tunnel_timeout max_retries;
-
-    platform () >>= fun plat ->
-    (* Needed because Linux system log doesn't like the terminal
-       coloring string but the system log on OS X does just fine *)
-    current_platform := plat;
-
-    with_retries ~max_retries begin fun () ->
-      load_mappings !mapping_file >>= fun device_mapping ->
-      let devices = Hashtbl.create 24 in
-      try%lwt
-        (* We do this because usbmuxd itself assigns device IDs and we
-           need to begin the listen message, then find out the device IDs
-           that usbmuxd has assigned per UDID, hence the timeout. *)
-        Lwt.pick
-          [Lwt_unix.timeout 1.0;
-           Protocol.(create_listener ~max_retries ~event_cb:begin function
-               | Event Attached { serial_number = s; connection_speed = _;
-                                  connection_type = _; product_id = _;
-                                  location_id = _; device_id = d; } ->
-                 Hashtbl.add devices d s |> Lwt.return
-               | Event Detached d ->
-                 Hashtbl.remove devices d |> Lwt.return
-               | _ -> Lwt.return_unit
-             end)]
-      with
-        Lwt_unix.Timeout ->
-        (* Create, start a simple HTTP status server. We also register
-           the at_exit function here because it ought to happen just
-           once, like our status server *)
-        if stats_server then begin
-          start_status_server ~device_mapping ~devices;
-          (fun () ->
-             Printf.sprintf
+    handle_signals tunnel_timeout;
+    load_mappings !mapping_file >>= fun device_mapping ->
+    let devices = Hashtbl.create 24 in
+    try%lwt
+      (* We do this because usbmuxd itself assigns device IDs and we
+         need to begin the listen message, then find out the device IDs
+         that usbmuxd has assigned per UDID, hence the timeout. *)
+      Lwt.pick
+        [Lwt_unix.timeout 1.0;
+         Protocol.(create_listener ~event_cb:begin function
+             | Event Attached { serial_number = s; connection_speed = _;
+                                connection_type = _; product_id = _;
+                                location_id = _; device_id = d; } ->
+               Hashtbl.add devices d s |> Lwt.return
+             | Event Detached d ->
+               Hashtbl.remove devices d |> Lwt.return
+             | _ -> Lwt.return_unit
+           end
+             ())]
+    with
+      Lwt_unix.Timeout ->
+      (* Create, start a simple HTTP status server. We also register
+         the at_exit function here because it ought to happen just
+         once, like our status server *)
+      if stats_server then begin
+        start_status_server ~device_mapping ~devices;
+        (fun () ->
+           if Hashtbl.length running_servers <> 0
+           then
+             Lwt_io.printlf
                "Exited with %d still running; this is a bug."
                (Hashtbl.length running_servers)
-             |> error_with_color
-             |> Lwt_io.printl)
-          |> Lwt_main.at_exit
-        end;
-        let rec forever () =
-          (* This thread should never return but its better to be safe
-             than sorry*)
-          fst (Lwt.wait ()) >>= forever
-        in
-        (* Create, start the tunnels *)
-        ((device_alist_of_hashtable ~device_mapping ~devices)
-         |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
-        (* Wait forever *)
-        forever ()
-    end
+           else Lwt.return_unit)
+        |> Lwt_main.at_exit
+      end;
+      let rec forever () =
+        (* This thread should never return but its better to be safe
+           than sorry*)
+        fst (Lwt.wait ()) >>= forever
+      in
+      (* Create, start the tunnels *)
+      ((device_alist_of_hashtable ~device_mapping ~devices)
+       |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
+      (* Wait forever *)
+      forever ()
 
-  and do_restart tunnel_timeout max_retries =
-    (if Sys.file_exists !mapping_file then begin
-        complete_shutdown ();
-        log_info_success "Restarting relay with reloaded mappings";
-        (* Spin it up again *)
-        begin_relay
-          (* Use existing status server *)
-          ~stats_server:false
-          ~tunnel_timeout
-          ~device_map:!mapping_file
-          max_retries
-      end else begin
-       P.sprintf "Original mapping file %s does not exist \
-                  anymore, not reloading" !mapping_file
-       |> log_info_bad |> Lwt.return
-     end)
-    |> Lwt.ignore_result
+  and do_restart tunnel_timeout =
+    if Sys.file_exists !mapping_file then begin
+      complete_shutdown ();
+      Logging.(
+        if !logging_opts.log_everything_else
+        then Lwt_log.ign_info ~section:everything_else "Restarting relay with reloaded mappings"
+      );
+      (* Spin it up again *)
+      begin_relay
+        (* Use existing status server *)
+        ~log_opts:!Logging.logging_opts
+        ~stats_server:false
+        ~tunnel_timeout
+        ~device_map:!mapping_file
+      |> Lwt.ignore_result
+    end else
+      Logging.(
+        if !logging_opts.log_everything_else
+        then Lwt_log.ign_info_f
+            ~section:everything_else
+            "Original mapping file %s does not exist \
+             anymore, not reloading" !mapping_file
+      )
 
   (* Mutually recursive function, handle_signals needs name of
      begin_relay and begin_relay needs the name handle_signals *)
-  and handle_signals tunnel_timeout max_retries =
+  and handle_signals tunnel_timeout =
     Sys.([ (* Broken SSH pipes shouldn't exit our program *)
         signal sigpipe Signal_ignore;
         (* Stop the running threads, call begin_relay again *)
-        signal sigusr1 (Signal_handle (fun _ -> do_restart tunnel_timeout max_retries));
+        signal
+          sigusr1
+          (Signal_handle (fun _ -> do_restart tunnel_timeout));
         (* Shutdown the servers, relays then exit *)
         signal sigusr2 (Signal_handle begin fun _ ->
             let relay_count = Hashtbl.length running_servers in
             complete_shutdown ();
-            P.sprintf "Shutdown %d relays, exiting now" relay_count
-            |> log_info_success;
-            exit 0
+            Logging.(
+              if !logging_opts.log_everything_else
+              then
+                Lwt_log.ign_info_f
+                  ~section:everything_else
+                  "Shutdown %d relays, exiting now" relay_count;
+              exit 0
+            )
           end);
         (* Handle plain kill from command line *)
         signal sigterm (Signal_handle (fun _ -> complete_shutdown (); exit 0))
@@ -558,17 +555,24 @@ module Relay = struct
         exit 0
       with
         Unix_error(EPERM, _, _) ->
-        (match action with Reload -> "Couldn't reload mapping, permissions error"
-                         | Shutdown -> "Couldn't shutdown cleanly, \
-                                        permissions error")
-        |> error_with_color |> prerr_endline;
-        exit 3
+        Logging.(
+          if !logging_opts.log_everything_else
+          then
+            Lwt_log.ign_error ~section:everything_else
+              (match action with Reload -> "Couldn't reload mapping, permissions error"
+                               | Shutdown -> "Couldn't shutdown cleanly, \
+                                              permissions error");
+          exit 3
+        )
       | Unix_error(ESRCH, _, _) ->
-        error_with_color
-          (P.sprintf "Are you sure relay was running already? \
-                      Pid in %s did not match running relay " pid_file)
-        |> prerr_endline;
-        exit 5
+        Logging.(
+          if !logging_opts.log_everything_else
+          then
+            Lwt_log.ign_error_f ~section:everything_else
+              "Are you sure relay was running already? \
+               Pid in %s did not match running relay " pid_file;
+          exit 5
+        )
     )
 
   let status () =
