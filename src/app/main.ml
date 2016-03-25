@@ -5,17 +5,16 @@ module P = Usbmux.Protocol
 module R = Usbmux.Relay
 module U = Yojson.Basic.Util
 
-(* Ripped from cmdliner *)
-let find_cmd cmds =
-  let test, null = match Sys.os_type with
-    | "Win32" -> "where", " NUL"
-    | _ -> "type", "/dev/null"
-  in
-  let cmd c = Sys.command (Printf.sprintf "%s %s 1>%s 2>%s" test c null null) = 0 in
-  try Some (List.find cmd cmds) with Not_found -> None
-
 let show_status () =
   (* Ripped from cmdliner *)
+  let find_cmd cmds =
+    let test, null = match Sys.os_type with
+      | "Win32" -> "where", " NUL"
+      | _ -> "type", "/dev/null"
+    in
+    let cmd c = Sys.command (Printf.sprintf "%s %s 1>%s 2>%s" test c null null) = 0 in
+    try Some (List.find cmd cmds) with Not_found -> None
+  in
   let pager =
     let cmds = ["less"; "more"] in
     let cmds = try (Sys.getenv "PAGER") :: cmds with Not_found -> cmds in
@@ -25,33 +24,42 @@ let show_status () =
   Lwt_main.run begin
     try%lwt
       R.status () >>= fun as_json ->
-      let uptime = U.member "uptime" as_json |> U.to_float in
-      let payload = U.member "status_data" as_json in
-      let mapping_file =
-        U.member "mappings_file" as_json |> U.to_string
+      let (uptime, payload, lazy_exns, tunnels_created, mapping_file) =
+        U.(member "uptime" as_json |> to_float,
+           member "status_data" as_json,
+           member "async_exceptions_count" as_json |> to_int,
+           member "tunnels_created_count" as_json |> to_int,
+           member "mappings_file" as_json |> to_string)
       in
       let msg =
-        Printf.sprintf "%s\n%s\n%d %s\n%s\n%s"
-          (Printf.sprintf "Uptime -> Hours: %.2f Minutes: %.2f"
-             (uptime /. 60.0 /. 60.0) (uptime /. 60.0))
-          (Printf.sprintf "Referencing mapping file at: %s" mapping_file)
-          (U.to_list payload |> List.length)
-          ("devices have tunnels ready, if devices are connected then you can \
-            \nssh into them with the port numbers printed \
-            below.\nExample:")
-          ("\tssh root@localhost -p <some_port>")
-          (Yojson.Basic.pretty_to_string payload)
+        Printf.(
+          sprintf "%s\n%s\n%s\n%d %s\n%s\n%s"
+            (sprintf "Uptime -> Hours: %.2f Minutes: %.2f"
+               (uptime /. 60.0 /. 60.0)
+               (uptime /. 60.0))
+            (sprintf "Dev Info -> Lazy value exceptions: %d Tunnels Created: %d"
+               lazy_exns
+               tunnels_created)
+            (sprintf "Referencing mapping file at -> %s" mapping_file)
+            (U.to_list payload |> List.length)
+            ("devices have tunnels ready, if devices are connected then you can \
+              \nssh into them with the port numbers printed \
+              below.\nExample:")
+            ("\tssh root@localhost -p <some_port>")
+            (Yojson.Basic.pretty_to_string payload)
+        )
       in
       match pager with
       | None -> Lwt_io.printl msg
       | Some p ->
         let f_name = Filename.temp_file "gandalf" "status" in
         (fun oc -> Lwt_io.write_from_string_exactly oc msg 0 (String.length msg))
-        |> Lwt_io.with_file ~mode:Lwt_io.Output f_name >>= fun () ->
-        Sys.command (Printf.sprintf "%s %s" p f_name) |> ignore;
-        Lwt_unix.unlink f_name
+        |> Lwt_io.with_file ~mode:Lwt_io.Output f_name >>
+        (Sys.command (Printf.sprintf "%s %s" p f_name) |> ignore;
+         Lwt_unix.unlink f_name)
     with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
-      Lwt_io.printl "Couldn't get status, check if gandalf is running"
+      Lwt_io.printl "Couldn't get status, check if gandalf is running" >>
+      exit 6
   end;
   exit 0
 
@@ -198,6 +206,7 @@ let top_level_info =
              `P "3 -> Exited because relay was already running according to pid file";
              `P "4 -> Exited because of permissions, couldn't open pid file";
              `P "5 -> Check if $(b,$(tname)) was already running";
+             `P "6 -> Check if $(b,$(tname)) is even running";
              `S "AUTHOR";
              `P "Edgar Aroutiounian <edgar.factorial@gmail.com>"]
   in

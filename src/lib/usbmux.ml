@@ -176,8 +176,12 @@ module Relay = struct
 
   let relay_lock = Lwt_mutex.create ()
 
-  let (running_servers, mapping_file, relay_timeout) =
-    Hashtbl.create 10, ref "", ref 0
+  let (running_servers,
+       mapping_file,
+       relay_timeout,
+       lazy_exceptions,
+       tunnels_created) =
+    Hashtbl.create 10, ref "", ref 0, ref 0, ref 0
 
   let status_server = Uri.of_string "http://127.0.0.1:5000"
 
@@ -252,6 +256,7 @@ module Relay = struct
           Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
           match parse_reply buffer with
           | Result Success ->
+            tunnels_created := !tunnels_created + 1;
             P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
                        Device_id: %d" udid port device_port device_id
             |> Logging.log `tunnel;
@@ -307,6 +312,7 @@ module Relay = struct
           | Unix_error (EADDRINUSE, _, _) ->
             log `misc "Check if already running tunneling relay, probably are"
           | CamlinternalLazy.Undefined ->
+            lazy_exceptions := !lazy_exceptions + 1;
             "(Safe to ignore) OCaml lazy value exception from TCP tunneling"
             |> log `misc
           | exn ->
@@ -337,6 +343,8 @@ module Relay = struct
       let body =
         `Assoc [
           ("uptime", `Float uptime);
+          ("async_exceptions_count", `Int !lazy_exceptions);
+          ("tunnels_created_count", `Int !tunnels_created);
           ("mappings_file", `String !mapping_file);
           ("status_data",
            `List (!device_list
