@@ -181,7 +181,7 @@ module Relay = struct
        relay_timeout,
        lazy_exceptions,
        tunnels_created) =
-    Hashtbl.create 10, ref "", ref 0, ref 0, ref 0
+    Hashtbl.create 24, ref "", ref 0, ref 0, ref 0
 
   let status_server = Uri.of_string "http://127.0.0.1:5000"
 
