@@ -180,8 +180,9 @@ module Relay = struct
        mapping_file,
        relay_timeout,
        lazy_exceptions,
-       tunnels_created) =
-    Hashtbl.create 24, ref "", ref 0, ref 0, ref 0
+       tunnels_created,
+       tunnel_timeouts) =
+    Hashtbl.create 24, ref "", ref 0, ref 0, ref 0, ref 0
 
   let status_server = Uri.of_string "http://127.0.0.1:5000"
 
@@ -307,7 +308,9 @@ module Relay = struct
     Logging.(
       Unix.(
         Lwt.async_exception_hook := function
-          | Lwt.Canceled -> log `misc "A ssh connection timed out"
+          | Lwt.Canceled ->
+            tunnel_timeouts := !tunnel_timeouts + 1;
+            log `misc "A tunnel connection timed out"
           | Unix_error (ENOTCONN, _, _) -> log `misc "Connection refused"
           | Unix_error (EADDRINUSE, _, _) ->
             log `misc "Check if already running tunneling relay, probably are"
@@ -345,6 +348,7 @@ module Relay = struct
           ("uptime", `Float uptime);
           ("async_exceptions_count", `Int !lazy_exceptions);
           ("tunnels_created_count", `Int !tunnels_created);
+          ("tunnel_timeouts", `Int !tunnel_timeouts);
           ("mappings_file", `String !mapping_file);
           ("status_data",
            `List (!device_list

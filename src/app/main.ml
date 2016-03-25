@@ -24,27 +24,33 @@ let show_status () =
   Lwt_main.run begin
     try%lwt
       R.status () >>= fun as_json ->
-      let (uptime, payload, lazy_exns, tunnels_created, mapping_file) =
+      let (uptime, payload, lazy_exns,
+           tunnels_created, tunnel_timeouts, mapping_file) =
         U.(member "uptime" as_json |> to_float,
            member "status_data" as_json,
            member "async_exceptions_count" as_json |> to_int,
            member "tunnels_created_count" as_json |> to_int,
+           member "tunnel_timeouts" as_json |> to_int,
            member "mappings_file" as_json |> to_string)
       in
       let msg =
         Printf.(
-          sprintf "%s\n%s\n%s\n%d %s\n%s\n%s"
-            (sprintf "Uptime -> Hours: %.2f Minutes: %.2f"
+          sprintf "%s\n%s\n%s\n%s\n%s\n%s"
+            (sprintf "Uptime -> \n\tHours: %.2f \n\tMinutes: %.2f"
                (uptime /. 60.0 /. 60.0)
                (uptime /. 60.0))
-            (sprintf "Dev Info -> Lazy value exceptions: %d Tunnels Created: %d"
+            (sprintf "Useful Info -> \n\tLazy value exns: %d\
+                      \n\tTunnels Created: %d\n\tTunnel Timeouts: %d\
+                      \n\tReady Tunnels: %d"
                lazy_exns
-               tunnels_created)
-            (sprintf "Referencing mapping file at -> %s" mapping_file)
-            (U.to_list payload |> List.length)
-            ("devices have tunnels ready, if devices are connected then you can \
+               tunnels_created
+               tunnel_timeouts
+               (U.to_list payload |> List.length))
+            (sprintf "Referencing mapping file at -> \n\t%s\n" mapping_file)
+            ("Assuming that your devices are connected and your mapping \n\
+              file has devices mapped to port 22 then you can \
               \nssh into them with the port numbers printed \
-              below.\nExample:")
+              below.\n\nExample:")
             ("\tssh root@localhost -p <some_port>")
             (Yojson.Basic.pretty_to_string payload)
         )
