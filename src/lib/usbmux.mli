@@ -1,24 +1,37 @@
+(**
+   Usbmux is the library that powers {b gandalf}, the program that
+   lets you forward local ports to a port on an iDevice effectively
+   letting you {b ssh} into it.
+*)
+
 (** Path to relay's running pid file *)
 val pid_file : string
 
+(** [Logging] provides a type definition for logging options *)
 module Logging : sig
 
-  type log_opts = { log_conns : bool;
-                    log_async_exn : bool;
-                    log_plugged_inout : bool;
-                    log_everything_else : bool; }
+  type log_opts = {
+    (** Whether to log individual tunnels, both connecting and
+        disconnecting; this can get quite noisy. *)
+    log_conns : bool;
+    (** Whether to log asynchronous exceptions. *)
+    log_async_exn : bool;
+    (** Whether to log when devices are plugged in or out. *)
+    log_plugged_inout : bool;
+    (** Whether to log all other events. *)
+    log_everything_else : bool; }
 
 end
 
 (** Module containing types definitions and functions for
-    communicating with usbmuxd *)
+    communicating with {b usbmuxd}. *)
 module Protocol : sig
 
-  (** A plist can be either binary or XML *)
+  (** A plist can be either binary or XML. *)
   type msg_version_t = Binary | Plist
 
   (** Result code after trying to establish a connection for a
-      device *)
+      device, variant names are self-documenting. *)
   type conn_code =
       Success
     | Device_requested_not_connected
@@ -28,7 +41,8 @@ module Protocol : sig
   (** A device event with associated metadata *)
   type event = Attached of device_t | Detached of int
 
-  (** High level metadata about the device connection *)
+  (** High level self documenting metadata about the device
+      connection *)
   and device_t = {
     serial_number : string;
     connection_speed : int;
@@ -44,7 +58,7 @@ module Protocol : sig
   exception Unknown_reply of string
 
   (** Creates a listener waiting for events, ie connections and
-      disconnections *)
+      disconnections. *)
   val create_listener :
     ?event_cb:(msg_t -> unit Lwt.t) -> unit -> unit Lwt.t
 

@@ -48,13 +48,6 @@ end
 let byte_swap_16 value =
   ((value land 0xFF) lsl 8) lor ((value lsr 8) land 0xFF)
 
-let time_now () =
-  Unix.(
-    let localtime = localtime (time ()) in
-    P.sprintf "[%02u:%02u:%02u]"
-      localtime.tm_hour localtime.tm_min localtime.tm_sec
-  )
-
 let pid_file = "/var/run/gandalf.pid"
 
 module Protocol = struct
