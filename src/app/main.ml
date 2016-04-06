@@ -127,15 +127,22 @@ let begin_program
   | None ->
     if do_daemonize
     then "Warning: Only in listen mode, not daemonizing" |> prerr_endline;
-    P.(create_listener ~event_cb:begin function
+    Lwt.catch
+    P.(create_listener ~event_cb:(function
         | Event Attached { serial_number = s; connection_speed = _;
                            connection_type = _; product_id = _; location_id = _;
                            device_id = d; } ->
           Lwt_io.printlf "Device %d with serial number: %s connected" d s
         | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
-        | _ -> Lwt.return ()
-      end
-        ())
+        | _ -> Lwt.return ()))
+    Unix.(function
+        | Unix_error((ECONNREFUSED | ENOENT), _, _) ->
+          Lwt_io.printl "Check if usbmuxd is running" >>
+          exit 7
+        | e ->
+          Printexc.to_string e
+          |> Lwt_io.printlf "Please report: Unknown exception: %s" >>
+          exit 8)
   | Some device_map ->
     let device_map =
       if Filename.is_relative device_map
@@ -207,12 +214,14 @@ let top_level_info =
              `P "Be sure to check your system log for valuable \
                  debugging information, especially with -v";
              `S "EXIT CODES";
-             `P "1 -> Exited because of an unhandled async exception";
+             `P "1 -> Exited because of an unhandled async exception, please report";
              `P "2 -> Exited because couldn't reload mapping or couldn't shutdown cleanly";
              `P "3 -> Exited because relay was already running according to pid file";
              `P "4 -> Exited because of permissions, couldn't open pid file";
              `P "5 -> Check if $(b,$(tname)) was already running";
              `P "6 -> Check if $(b,$(tname)) is even running";
+             `P "7 -> Check if usbmuxd is running";
+             `P "8 -> Unknown reason, please report";
              `S "AUTHOR";
              `P "Edgar Aroutiounian <edgar.factorial@gmail.com>"]
   in
