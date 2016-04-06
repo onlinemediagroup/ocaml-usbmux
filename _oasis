@@ -23,8 +23,8 @@ Library usbmux
   Modules:      Usbmux
   install: true
   CompiledObject: native
-  NativeOpt: -g
-  ByteOpt: -g
+  NativeOpt: -g -w +a-4-40..42-44-45-48
+  ByteOpt: -g -w +a-4-40..42-44-45-48
   BuildDepends:
     lwt.unix (>= 2.5.1), lwt.ppx, plist,
     yojson, stringext, cohttp.lwt
@@ -35,8 +35,8 @@ Executable gandalf
   install: true
   MainIs: main.ml
   CompiledObject: native
-  NativeOpt: -g
-  ByteOpt: -g
+  NativeOpt: -g -w +a-4-40..42-44-45-48
+  ByteOpt: -g -w +a-4-40..42-44-45-48
   BuildDepends: cmdliner, usbmux
 
 SourceRepository master
@@ -45,10 +45,12 @@ SourceRepository master
   Browser:  https://github.com/onlinemediagroup/ocaml-usbmux
 
 Document api
-  Title:              Documentation and API reference
-  Type:               ocamlbuild (0.3)
+  Title:              Documentation and API reference for Usbmux
+  Type:               ocamlbuild (0.4)
   BuildTools+:        ocamldoc
+  InstallDir:         $htmldir/usbmux
+  PostCommand:        cp doc/style.css api.docdir
   XOCamlbuildPath:    doc
   XOCamlbuildModules: src/lib/Usbmux
-  Install:            false
+  Install:            true
   XOCamlbuildExtraArgs: "-docflags '-colorize-code -charset utf-8 -hide Usbmux -hide Pervasives'"
