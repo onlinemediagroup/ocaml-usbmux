@@ -1,15 +1,16 @@
 # -*- conf -*-
-OASISFormat: 0.4
-Name:        usbmux
-Version:     1.1.1
-Synopsis:    Control port remapping for iOS devices
-Authors:     Edgar Aroutiounian <edgar.factorial@gmail.com>
-Maintainers: Edgar Aroutiounian <edgar.factorial@gmail.com>
-Homepage:    https://github.com/onlinemediagroup/ocaml-usbmux
-License:     BSD-3-clause
-OCamlVersion: >= 4.02.0
-Plugins:     META (0.4), DevFiles (0.4)
-BuildTools: ocamlbuild
+OASISFormat:   0.4
+Name:          usbmux
+Version:       1.1.1
+Synopsis:      Control port remapping for iOS devices
+Authors:       Edgar Aroutiounian <edgar.factorial@gmail.com>
+Maintainers:   Edgar Aroutiounian <edgar.factorial@gmail.com>
+Homepage:      https://github.com/onlinemediagroup/ocaml-usbmux
+License:       BSD-3-clause
+OCamlVersion:  >= 4.02.0
+AlphaFeatures: ocamlbuild_more_args
+Plugins:       META (0.4), DevFiles (0.4)
+BuildTools:    ocamlbuild, ocamldoc
 
 PostBuildCommand:
   sh install_man.sh
@@ -42,3 +43,12 @@ SourceRepository master
   Type:     git
   Location: https://github.com/onlinemediagroup/ocaml-usbmux.git
   Browser:  https://github.com/onlinemediagroup/ocaml-usbmux
+
+Document api
+  Title:              Documentation and API reference
+  Type:               ocamlbuild (0.3)
+  BuildTools+:        ocamldoc
+  XOCamlbuildPath:    doc
+  XOCamlbuildModules: src/lib/Usbmux
+  Install:            false
+  XOCamlbuildExtraArgs: "-docflags '-colorize-code -charset utf-8 -hide Usbmux -hide Pervasives'"
