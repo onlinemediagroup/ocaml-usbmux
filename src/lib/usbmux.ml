@@ -368,8 +368,10 @@ module Relay = struct
        listing, needed as device plugs in and out *)
     Lwt.async begin fun () ->
       let shutdown_and_prune d =
-        Lwt_io.shutdown_server (Hashtbl.find running_servers d);
-        Hashtbl.remove running_servers d
+        try
+          Lwt_io.shutdown_server (Hashtbl.find running_servers d);
+          Hashtbl.remove running_servers d
+        with Not_found -> ()
       in
       let spin_up_tunnel device_udid new_id =
         try
@@ -400,8 +402,8 @@ module Relay = struct
             P.sprintf "Device %d disconnected" d
             |> Logging.log `plugged_inout;
             load_mappings !mapping_file >|= fun device_mapping ->
-            Hashtbl.remove devices d;
             shutdown_and_prune d;
+            Hashtbl.remove devices d;
             device_list := device_alist_of_hashtable ~device_mapping ~devices
           | _ -> Lwt.return_unit
         end
