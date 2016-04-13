@@ -222,8 +222,8 @@ module Relay = struct
           | '#' -> accum
           | _ ->
             match Stringext.split line ~on:':' with
-            | udid :: port_number :: port_forward :: [] ->
-              (udid, int_of_string port_number, int_of_string port_forward) :: accum
+            | udid :: port_number :: port_forward :: port_forward_second :: [] ->
+              (udid, int_of_string port_number, int_of_string port_forward, int_of_string port_forward_second) :: accum
             | _ ->
               raise (Bad_mapping_file "Mapping file needs to be of the \
                                        form udid:port_local:device_port")
@@ -232,10 +232,10 @@ module Relay = struct
       end []
     in
     let t = Hashtbl.create (List.length prepped) in
-    prepped |> List.iter (fun (k, v, p_forward) -> Hashtbl.add t k (v, p_forward));
+    prepped |> List.iter (fun (k, v, p_forward, p_forward_two) -> Hashtbl.add t k (v, p_forward, p_forward_two));
     t
 
-  let do_tunnel tunnel_timeout (udid, (port, device_port, device_id)) =
+  let do_tunnel tunnel_timeout (udid, (port, device_port, device_id, port_forward_two)) =
     let open Protocol in
     let server_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
     let server =
@@ -321,8 +321,8 @@ module Relay = struct
   let device_alist_of_hashtable ~device_mapping ~devices =
     Hashtbl.fold begin fun device_id_key udid_value accum ->
       try
-        let (from_port, to_port) = Hashtbl.find device_mapping udid_value in
-        (udid_value, (from_port, to_port, device_id_key)) :: accum
+        let (from_port, to_port, to_port_two) = Hashtbl.find device_mapping udid_value in
+        (udid_value, (from_port, to_port, device_id_key, to_port_two)) :: accum
       with
         Not_found ->
         P.sprintf "Device with udid: %s expected but wasn't connected" udid_value
@@ -345,7 +345,7 @@ module Relay = struct
           ("mappings_file", `String !mapping_file);
           ("status_data",
            `List (!device_list
-                  |> List.map begin fun (udid, (from_port, to_port, device_id)) ->
+                  |> List.map begin fun (udid, (from_port, to_port, device_id, to_port_two)) ->
                     (`Assoc [("Local Port", `Int from_port);
                              ("iDevice Port Forwarded", `Int to_port);
                              ("Usbmuxd assigned iDevice ID", `Int device_id);
@@ -368,8 +368,8 @@ module Relay = struct
       in
       let spin_up_tunnel device_udid new_id =
         try
-          let (port, device_port, _) = List.assoc device_udid !device_list in
-          (device_udid, (port, device_port, new_id)) |> do_tunnel !relay_timeout
+          let (port, device_port, _, port_forward_two) = List.assoc device_udid !device_list in
+          (device_udid, (port, device_port, new_id, port_forward_two)) |> do_tunnel !relay_timeout
         with
           Not_found ->
           P.sprintf "relay can't create tunnel for device udid: %s" device_udid
