@@ -1,3 +1,4 @@
+open StdLabels
 open Lwt.Infix
 open Cmdliner
 
@@ -13,7 +14,7 @@ let show_status () =
       | _ -> "type", "/dev/null"
     in
     let cmd c = Sys.command (Printf.sprintf "%s %s 1>%s 2>%s" test c null null) = 0 in
-    try Some (List.find cmd cmds) with Not_found -> None
+    try Some (List.find ~f:cmd cmds) with Not_found -> None
   in
   let pager =
     let cmds = ["less"; "more"] in

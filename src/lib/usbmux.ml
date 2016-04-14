@@ -1,4 +1,5 @@
 open StdLabels
+open MoreLabels
 open Lwt.Infix
 
 module B = Yojson.Basic
@@ -247,7 +248,7 @@ module Relay = struct
           raise (Mapping_file_error error_msg))
     |> fun tunnels ->
     let t = Hashtbl.create (List.length tunnels) in
-    tunnels |> List.iter ~f:(fun tunnel -> Hashtbl.add t tunnel.udid tunnel);
+    tunnels |> List.iter ~f:(fun tunnel -> Hashtbl.add t ~key:tunnel.udid ~data:tunnel);
     t
 
   let do_tunnel tunnel_timeout (udid, (device_id, tunnels)) =
@@ -308,13 +309,13 @@ module Relay = struct
           end
         in
         (* Register the server *)
-        (fun () -> Lwt.return (Hashtbl.add running_servers device_id server))
+        (fun () -> Lwt.return (Hashtbl.add running_servers ~key:device_id ~data:server))
         |> Lwt_mutex.with_lock relay_lock)
 
 
   let complete_shutdown () =
     (* Kill the servers first *)
-    running_servers |> Hashtbl.iter (fun _ server -> Lwt_io.shutdown_server server);
+    running_servers |> Hashtbl.iter ~f:(fun ~key:_ ~data -> Lwt_io.shutdown_server data);
     P.sprintf "Completed shutting down %d servers" (Hashtbl.length running_servers)
     |> Logging.log `misc;
     Hashtbl.reset running_servers
@@ -343,16 +344,14 @@ module Relay = struct
     )
 
   let device_alist_of_hashtable ~device_mapping ~devices =
-    Hashtbl.fold begin fun device_id_key udid_value accum ->
+    devices |> Hashtbl.fold ~init:[] ~f:(fun ~key:device_id ~data:udid_value accum ->
       try
-        (udid_value, (device_id_key,
-                      Hashtbl.find device_mapping udid_value)) :: accum
+        (udid_value, (device_id, Hashtbl.find device_mapping udid_value)) :: accum
       with
         Not_found ->
         P.sprintf "Device with udid: %s expected but wasn't connected" udid_value
         |> Logging.log `misc;
-        accum
-    end devices []
+        accum)
 
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_alist_of_hashtable ~device_mapping ~devices) in
@@ -418,7 +417,7 @@ module Relay = struct
             then
               (* Two cases, devices that have been known or unknown devices *)
               load_mappings !mapping_file >|= fun device_mapping ->
-              Hashtbl.add devices d s;
+              Hashtbl.add devices ~key:d ~data:s;
               device_list := device_alist_of_hashtable ~device_mapping ~devices;
               spin_up_tunnel s d |> Lwt.ignore_result
             else
@@ -471,7 +470,7 @@ module Relay = struct
              | Event Attached { serial_number = s; connection_speed = _;
                                 connection_type = _; product_id = _;
                                 location_id = _; device_id = d; } ->
-               Hashtbl.add devices d s |> Lwt.return
+               Hashtbl.add devices ~key:d ~data:s |> Lwt.return
              | Event Detached d ->
                Hashtbl.remove devices d |> Lwt.return
              | _ -> Lwt.return_unit
