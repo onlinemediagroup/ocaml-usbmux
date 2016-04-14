@@ -10,6 +10,7 @@ val pid_file : string
 (** [Logging] provides a type definition for logging options *)
 module Logging : sig
 
+  (** Logging options record *)
   type log_opts = {
     (** Whether to log individual tunnels, both connecting and
         disconnecting; this can get quite noisy. *)
