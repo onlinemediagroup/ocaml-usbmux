@@ -235,7 +235,7 @@ let top_level_info =
              `S "AUTHOR";
              `P "Edgar Aroutiounian <edgar.factorial@gmail.com>"]
   in
-  Term.info "gandalf" ~version:"1.1.1" ~doc ~man
+  Term.info "gandalf" ~version:"1.2.0" ~doc ~man
 
 let () =
   Printexc.record_backtrace true;
