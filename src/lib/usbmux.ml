@@ -288,14 +288,14 @@ module Relay = struct
                     let e = echo tunnel_timeout in
                     e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
                     Lwt.return (
-                      P.sprintf "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
-                                 Device_id: %d" udid local_port device_port device_id
-                      |> Logging.log `tunnel
-                    ))
+                      P.sprintf
+                        "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+                         Device_id: %d" udid local_port device_port device_id
+                      |> Logging.log `tunnel))
                   (function
                     | Client_closed ->
-                      print_endline "Client closed with an exception" |>
-                      close_chans (mux_ic, mux_oc) >>=
+                      Logging.log `tunnel "Client closed with an exception"
+                      |> close_chans (mux_ic, mux_oc) >>=
                       close_chans (tcp_ic, tcp_oc)
                     | otherwise -> Lwt.fail otherwise)
               | Result Device_requested_not_connected ->
@@ -357,13 +357,14 @@ module Relay = struct
 
   let device_alist_of_hashtable ~device_mapping ~devices =
     devices |> Hashtbl.fold ~init:[] ~f:(fun ~key:device_id ~data:udid_value accum ->
-      try
-        (udid_value, (device_id, Hashtbl.find device_mapping udid_value)) :: accum
-      with
-        Not_found ->
-        P.sprintf "Device with udid: %s expected but wasn't connected" udid_value
-        |> Logging.log `misc;
-        accum)
+        try
+          (udid_value, (device_id,
+                        Hashtbl.find device_mapping udid_value)) :: accum
+        with
+          Not_found ->
+          P.sprintf "Device with udid: %s expected but wasn't connected" udid_value
+          |> Logging.log `misc;
+          accum)
 
   let start_status_server ~device_mapping ~devices =
     let device_list = ref (device_alist_of_hashtable ~device_mapping ~devices) in
