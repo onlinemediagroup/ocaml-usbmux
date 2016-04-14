@@ -170,7 +170,7 @@ let begin_program
           Lwt_io.printl s
           >> exit 8
         | e ->
-          Lwt_io.printlf "Unknown exception: %s" (Printexc.to_string e)
+          Lwt_io.printlf "Please report: Unknown exception: %s" (Printexc.to_string e)
           >> exit 9)
 
 let entry_point = let open Gandalf_args in

@@ -222,7 +222,8 @@ module Relay = struct
     Lwt_stream.peek hook_in >>= function
       (* Force an exception to happen *)
     | None -> Lwt.fail Client_closed
-    | _ -> hook_in |> timeout_stream ~after_timeout:(close_chans (ic, oc)) ~read_timeout
+    | _ -> hook_in
+           |> timeout_stream ~after_timeout:(close_chans (ic, oc)) ~read_timeout
            |> Lwt_io.write_chars oc
 
   let load_mappings file_name =
@@ -234,22 +235,33 @@ module Relay = struct
         then true else false)
     |> String.concat ~sep:"\n"
     |> fun data ->
-    (try Yojson.Safe.from_string data
-     with Yojson.Json_error s -> raise (Mapping_file_error s))
-    |> Yojson.Safe.Util.to_list
-    |> List.map ~f:(fun record -> (lazy record, tunnel_of_yojson record))
-    |> List.map ~f:(function
-        | (_, `Ok tunnel) -> tunnel
-        | (need_it, `Error r) ->
-          let error_msg =
-            ((Lazy.force need_it) |> Yojson.Safe.pretty_to_string)
-            |> P.sprintf "Check this needed field: %s, Original Json: %s" r
-          in
-          raise (Mapping_file_error error_msg))
-    |> fun tunnels ->
-    let t = Hashtbl.create (List.length tunnels) in
-    tunnels |> List.iter ~f:(fun tunnel -> Hashtbl.add t ~key:tunnel.udid ~data:tunnel);
-    t
+    Yojson.(
+      (try Safe.from_string data
+       with Json_error s -> raise (Mapping_file_error s))
+      |> fun should_be_array ->
+      (try
+         Safe.Util.to_list should_be_array
+       with
+       | Safe.Util.Type_error (e, _) ->
+         let msg =
+           P.sprintf "Error: %s HINT: Be sure mapping file consists of \
+                      a single JSON array of objects, see man page for examples" e
+         in
+         raise (Mapping_file_error msg))
+      |> List.map ~f:(fun record -> (lazy record, tunnel_of_yojson record))
+      |> List.map ~f:(function
+          | (_, `Ok tunnel) -> tunnel
+          | (need_it, `Error r) ->
+            let error_msg =
+              ((Lazy.force need_it) |> Safe.pretty_to_string)
+              |> P.sprintf "Check this needed field: %s, Original Json: %s" r
+            in
+            raise (Mapping_file_error error_msg))
+      |> fun tunnels ->
+      let t = Hashtbl.create (List.length tunnels) in
+      tunnels
+      |> List.iter ~f:(fun tunnel -> Hashtbl.add t ~key:tunnel.udid ~data:tunnel);
+      t)
 
   let do_tunnel tunnel_timeout (udid, (device_id, tunnels)) =
     tunnels.forwarding |> Lwt_list.iter_p (fun {local_port; device_port} ->
