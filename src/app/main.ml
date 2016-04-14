@@ -128,41 +128,49 @@ let begin_program
     if do_daemonize
     then "Warning: Only in listen mode, not daemonizing" |> prerr_endline;
     Lwt.catch
-    P.(create_listener ~event_cb:(function
-        | Event Attached { serial_number = s; connection_speed = _;
-                           connection_type = _; product_id = _; location_id = _;
-                           device_id = d; } ->
-          Lwt_io.printlf "Device %d with serial number: %s connected" d s
-        | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
-        | _ -> Lwt.return ()))
-    Unix.(function
-        | Unix_error((ECONNREFUSED | ENOENT), _, _) ->
-          Lwt_io.printl "Check if usbmuxd is running" >>
-          exit 7
-        | e ->
-          Printexc.to_string e
-          |> Lwt_io.printlf "Please report: Unknown exception: %s" >>
-          exit 8)
+      P.(create_listener ~event_cb:(function
+          | Event Attached { serial_number = s; connection_speed = _;
+                             connection_type = _; product_id = _; location_id = _;
+                             device_id = d; } ->
+            Lwt_io.printlf "Device %d with serial number: %s connected" d s
+          | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
+          | _ -> Lwt.return ()))
+      Unix.(function
+          | Unix_error((ECONNREFUSED | ENOENT), _, _) ->
+            Lwt_io.printl "Check if usbmuxd is running" >>
+            exit 7
+          | e ->
+            Printexc.to_string e
+            |> Lwt_io.printlf "Please report: Unknown exception: %s" >>
+            exit 9)
   | Some device_map ->
-    let device_map =
-      if Filename.is_relative device_map
-      then Printf.sprintf "%s/%s" starting_place device_map
-      else device_map
-    in
-    Usbmux.Logging.(
-      let relay_with =
-        R.begin_relay ~stats_server:true ~tunnel_timeout ~device_map
-      in
-      if very_loud
-      then relay_with
-          ~log_opts:{log_conns = true;
-                     log_async_exn = true;
-                     log_plugged_inout = true;
-                     log_everything_else = true;}
-      else relay_with
-          ~log_opts:{log_conns; log_async_exn;
-                     log_plugged_inout; log_everything_else;}
-    )
+    Lwt.catch (fun () ->
+        let device_map =
+          if Filename.is_relative device_map
+          then Printf.sprintf "%s/%s" starting_place device_map
+          else device_map
+        in
+        Usbmux.Logging.(
+          let relay_with =
+            R.begin_relay ~stats_server:true ~tunnel_timeout ~device_map
+          in
+          if very_loud
+          then relay_with
+              ~log_opts:{log_conns = true;
+                         log_async_exn = true;
+                         log_plugged_inout = true;
+                         log_everything_else = true;}
+          else relay_with
+              ~log_opts:{log_conns; log_async_exn;
+                         log_plugged_inout; log_everything_else;}
+        ))
+      (function
+        | R.Mapping_file_error s ->
+          Lwt_io.printl s
+          >> exit 8
+        | e ->
+          Lwt_io.printlf "Unknown exception: %s" (Printexc.to_string e)
+          >> exit 9)
 
 let entry_point = let open Gandalf_args in
   Term.(pure
@@ -221,7 +229,8 @@ let top_level_info =
              `P "5 -> Check if $(b,$(tname)) was already running";
              `P "6 -> Check if $(b,$(tname)) is even running";
              `P "7 -> Check if usbmuxd is running";
-             `P "8 -> Unknown reason, please report";
+             `P "8 -> Error in mapping file, check your json";
+             `P "9 -> Unknown reason, please report";
              `S "AUTHOR";
              `P "Edgar Aroutiounian <edgar.factorial@gmail.com>"]
   in

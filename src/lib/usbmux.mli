@@ -70,6 +70,8 @@ module Relay : sig
   (** Actions that can be performed on running relays *)
   type action = Shutdown | Reload
 
+  type exn += Client_closed | Mapping_file_error of string
+
   (** Create a relay, last int is retries *)
   val begin_relay :
     ?log_opts:Logging.log_opts ->

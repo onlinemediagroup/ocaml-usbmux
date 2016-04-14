@@ -167,9 +167,10 @@ module Relay = struct
   type action = Shutdown | Reload
 
   type tunnel = { udid : string;
-                  forwarding : forward list; } [@@deriving yojson]
+                  name : string option;
+                  forwarding : forward list; } [@@deriving of_yojson]
   and forward = { local_port : int;
-                  device_port : int; } [@@deriving yojson]
+                  device_port : int; }
 
   type exn += Client_closed | Mapping_file_error of string
 
@@ -226,22 +227,31 @@ module Relay = struct
   let load_mappings file_name =
     Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >|= fun lines ->
     lines
-    |> List.filter ~f:(fun line -> if line <> "" ||  line.[0] <> '#' then false else true)
-    |> List.map ~f:(fun record ->
-        try
-          match Yojson.Safe.from_string record |> tunnel_of_yojson with
-          | `Ok tunnel -> tunnel
-          | `Error reason -> raise (Mapping_file_error reason)
-        with
-          Yojson.Json_error s -> raise (Mapping_file_error s)
-      )
+    |> List.map ~f:String.trim
+    |> List.filter ~f:(fun line ->
+        if line <> "" && line.[0] <> '#'
+        then true else false)
+    |> String.concat ~sep:"\n"
+    |> fun data ->
+    (try Yojson.Safe.from_string data
+     with Yojson.Json_error s -> raise (Mapping_file_error s))
+    |> Yojson.Safe.Util.to_list
+    |> List.map ~f:(fun record -> (lazy record, tunnel_of_yojson record))
+    |> List.map ~f:(function
+        | (_, `Ok tunnel) -> tunnel
+        | (need_it, `Error r) ->
+          let error_msg =
+            ((Lazy.force need_it) |> Yojson.Safe.pretty_to_string)
+            |> P.sprintf "Check this needed field: %s, Original Json: %s" r
+          in
+          raise (Mapping_file_error error_msg))
     |> fun tunnels ->
     let t = Hashtbl.create (List.length tunnels) in
     tunnels |> List.iter ~f:(fun tunnel -> Hashtbl.add t tunnel.udid tunnel);
     t
 
   let do_tunnel tunnel_timeout (udid, (device_id, tunnels)) =
-    tunnels |> Lwt_list.iter_p (fun {local_port; device_port} ->
+    tunnels.forwarding |> Lwt_list.iter_p (fun {local_port; device_port} ->
         let open Protocol in
         let server_address = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
         let server =
@@ -335,8 +345,8 @@ module Relay = struct
   let device_alist_of_hashtable ~device_mapping ~devices =
     Hashtbl.fold begin fun device_id_key udid_value accum ->
       try
-        let {forwarding; _} = Hashtbl.find device_mapping udid_value in
-        (udid_value, (device_id_key, forwarding)) :: accum
+        (udid_value, (device_id_key,
+                      Hashtbl.find device_mapping udid_value)) :: accum
       with
         Not_found ->
         P.sprintf "Device with udid: %s expected but wasn't connected" udid_value
@@ -351,16 +361,17 @@ module Relay = struct
       let uptime = Unix.gettimeofday () -. start_time in
       let body =
         let tunnels_data =
-          List.map ~f:(fun (udid, (device_id, tunnels)) ->
+          List.map ~f:(fun (udid, (device_id, {name; forwarding; _})) ->
               (`Assoc
-                 [("Tunnels",
-                   (`List
-                      (tunnels |> List.map ~f:(fun forward ->
-                           (`Assoc [("Local Port", `Int forward.local_port);
-                                    ("Device Port", `Int forward.device_port)] :
-                              B.json)))));
+                 [("Nickname", `String (match name with None -> "<Unnamed>" | Some s -> s));
                   ("Usbmuxd assigned iDevice ID", `Int device_id);
-                  ("iDevice UDID", `String udid)] : B.json))
+                  ("iDevice UDID", `String udid);
+                  ("Tunnels",
+                   (`List
+                      (forwarding |> List.map ~f:(fun tunnel ->
+                           (`Assoc [("Local Port", `Int tunnel.local_port);
+                                    ("Device Port", `Int tunnel.device_port)] :
+                              B.json)))))] : B.json))
             !device_list
         in
         `Assoc [
