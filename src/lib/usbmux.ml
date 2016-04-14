@@ -1,3 +1,4 @@
+open StdLabels
 open Lwt.Infix
 
 module B = Yojson.Basic
@@ -111,7 +112,7 @@ module Protocol = struct
   let write_header ?(version=Plist) ?(request=8) ?(tag=1) ~total_len o_chan =
     o_chan |> Lwt_io.atomic begin fun oc ->
       ([total_len; if version = Plist then 1 else 0; request; tag]
-       |> List.map Int32.of_int )
+       |> List.map ~f:Int32.of_int )
       |> Lwt_list.iter_s (Lwt_io.LE.write_int32 oc)
     end
 
@@ -227,26 +228,26 @@ module Relay = struct
 
   let load_mappings file_name =
     Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >|= fun all_names ->
-    let prepped = all_names |> List.fold_left begin fun accum line ->
-        if line <> "" then begin
-          match (Stringext.trim_left line).[0] with
-          (* Ignore comments *)
-          | '#' -> accum
-          | _ ->
-            match Stringext.split line ~on:':' with
-            | udid :: port_number :: port_forward :: port_forward_second :: [] ->
-              (udid, int_of_string port_number,
-               int_of_string port_forward, int_of_string port_forward_second) :: accum
-            | _ ->
-              raise (Bad_mapping_file "Mapping file needs to be of the \
-                                       form udid:port_local:device_port")
-        end
-        else accum
-      end []
-    in
-    let t = Hashtbl.create (List.length prepped) in
-    prepped |> List.iter (fun (k, v, p_forward, p_forward_two) ->
-        Hashtbl.add t k (v, p_forward, p_forward_two));
+    (* let prepped = all_names |> List.fold_left begin fun accum line -> *)
+    (*     if line <> "" then begin *)
+    (*       match (Stringext.trim_left line).[0] with *)
+    (*       (\* Ignore comments *\) *)
+    (*       | '#' -> accum *)
+    (*       | _ -> *)
+    (*         match Stringext.split line ~on:':' with *)
+    (*         | udid :: port_number :: port_forward :: port_forward_second :: [] -> *)
+    (*           (udid, int_of_string port_number, *)
+    (*            int_of_string port_forward, int_of_string port_forward_second) :: accum *)
+    (*         | _ -> *)
+    (*           raise (Bad_mapping_file "Mapping file needs to be of the \ *)
+    (*                                    form udid:port_local:device_port") *)
+    (*     end *)
+    (*     else accum *)
+    (*   end [] *)
+    (* in *)
+    let t = Hashtbl.create (10) in
+    (* prepped |> List.iter (fun (k, v, p_forward, p_forward_two) -> *)
+    (*     Hashtbl.add t k (v, p_forward, p_forward_two)); *)
     t
 
   (* Goal is so that when you do nc local 3008 you actually get
@@ -370,7 +371,7 @@ module Relay = struct
 
   let complete_shutdown () =
     (* Kill the servers first *)
-    running_servers |> Hashtbl.iter (fun _ servers -> servers |> List.iter Lwt_io.shutdown_server );
+    running_servers |> Hashtbl.iter (fun _ servers -> servers |> List.iter ~f:Lwt_io.shutdown_server );
     P.sprintf "Completed shutting down %d servers" (Hashtbl.length running_servers)
     |> Logging.log `misc;
     Hashtbl.reset running_servers
@@ -425,13 +426,13 @@ module Relay = struct
           ("mappings_file", `String !mapping_file);
           ("status_data",
            `List (!device_list
-                  |> List.map begin fun (udid, (from_port, to_port, device_id, to_port_two)) ->
+                  |> List.map ~f:(fun (udid, (from_port, to_port, device_id, to_port_two)) ->
                     (`Assoc [("Local Port", `Int from_port);
                              ("Application Logic", `Int to_port_two);
                              ("iDevice Port Forwarded", `Int to_port);
                              ("Usbmuxd assigned iDevice ID", `Int device_id);
                              ("iDevice UDID", `String udid)] : B.json)
-                  end))]
+                    )))]
         |> B.to_string
       in
       Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body ()
@@ -444,7 +445,7 @@ module Relay = struct
       let shutdown_and_prune d =
         try
           (Hashtbl.find running_servers d)
-          |> List.iter Lwt_io.shutdown_server;
+          |> List.iter ~f:Lwt_io.shutdown_server;
           Hashtbl.remove running_servers d
         with Not_found -> ()
       in
@@ -590,7 +591,7 @@ module Relay = struct
           end);
         (* Handle plain kill from command line *)
         signal sigterm (Signal_handle (fun _ -> complete_shutdown (); exit 0))
-      ]) |> List.iter ignore
+      ]) |> List.iter ~f:ignore
 
   (* We reload the mapping by sending a user defined signal to the
      current running daemon which will then cancel the running
