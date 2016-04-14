@@ -74,7 +74,7 @@ module Protocol = struct
   type msg_t = Result of conn_code
              | Event of event
 
-  exception Unknown_reply of string
+  type exn += Unknown_reply of string
 
   let (header_length, usbmuxd_address) = 16, Unix.ADDR_UNIX "/var/run/usbmuxd"
 
@@ -450,7 +450,7 @@ module Relay = struct
     (fun () -> Cohttp_lwt_unix.Server.create ~mode:(`TCP (`Port 5000)) server)
     |> Lwt.async
 
-  let rec begin_relay
+  let rec make_tunnels
       ?(log_opts=(!Logging.logging_opts))
       ?(stats_server=true)
       ~tunnel_timeout
@@ -521,7 +521,7 @@ module Relay = struct
       complete_shutdown ();
       Logging.log `misc "Restarting relay with reloaded mappings";
       (* Spin it up again *)
-      begin_relay
+      make_tunnels
         (* Use existing status server *)
         ~log_opts:!Logging.logging_opts
         ~stats_server:false
@@ -534,11 +534,11 @@ module Relay = struct
       |> Logging.log `misc
 
   (* Mutually recursive function, handle_signals needs name of
-     begin_relay and begin_relay needs the name handle_signals *)
+     make_tunnels and make_tunnels needs the name handle_signals *)
   and handle_signals tunnel_timeout =
     Sys.([ (* Broken SSH pipes shouldn't exit our program *)
         signal sigpipe Signal_ignore;
-        (* Stop the running threads, call begin_relay again *)
+        (* Stop the running threads, call make_tunnels again *)
         signal
           sigusr1
           (Signal_handle (fun _ -> do_restart tunnel_timeout));

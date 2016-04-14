@@ -153,7 +153,7 @@ let begin_program
         in
         Usbmux.Logging.(
           let relay_with =
-            R.begin_relay ~stats_server:true ~tunnel_timeout ~device_map
+            R.make_tunnels ~stats_server:true ~tunnel_timeout ~device_map
           in
           if very_loud
           then relay_with

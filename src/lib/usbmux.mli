@@ -1,7 +1,7 @@
 (**
    Usbmux is the library that powers {b gandalf}, the program that
-   lets you forward local ports to a port on an iDevice effectively
-   letting you {b ssh} into it.
+   lets you forward local ports to ports on an iDevice effectively
+   letting you {b ssh} into it and run other network programs.
 *)
 
 (** Path to relay's running pid file *)
@@ -10,16 +10,18 @@ val pid_file : string
 (** [Logging] provides a type definition for logging options *)
 module Logging : sig
 
+  (** Logging options *)
   type log_opts = {
+    log_conns : bool;
     (** Whether to log individual tunnels, both connecting and
         disconnecting; this can get quite noisy. *)
-    log_conns : bool;
-    (** Whether to log asynchronous exceptions. *)
     log_async_exn : bool;
-    (** Whether to log when devices are plugged in or out. *)
+    (** Whether to log asynchronous exceptions. *)
     log_plugged_inout : bool;
+    (** Whether to log when devices are plugged in or out. *)
+    log_everything_else : bool;
     (** Whether to log all other events. *)
-    log_everything_else : bool; }
+  }
 
 end
 
@@ -38,11 +40,11 @@ module Protocol : sig
     | Port_requested_not_available
     | Malformed_request
 
-  (** A device event with associated metadata *)
+  (** A device event with associated metadata. *)
   type event = Attached of device_t | Detached of int
 
   (** High level self documenting metadata about the device
-      connection *)
+      connection. *)
   and device_t = {
     serial_number : string;
     connection_speed : int;
@@ -52,13 +54,14 @@ module Protocol : sig
     device_id : int;
   }
 
-  (** Reply from usbmuxd, could be an event or reply to a query *)
+  (** Reply from usbmuxd, could be an event or reply to a query. *)
   type msg_t = Result of conn_code | Event of event
 
-  exception Unknown_reply of string
+  type exn += Unknown_reply of string
 
   (** Creates a listener waiting for events, ie connections and
-      disconnections. *)
+      disconnections. [create_listener ()] creates a Lwt thread, the
+      optional callback is your chance to handle the event. *)
   val create_listener :
     ?event_cb:(msg_t -> unit Lwt.t) -> unit -> unit Lwt.t
 
@@ -70,20 +73,27 @@ module Relay : sig
   (** Actions that can be performed on running relays *)
   type action = Shutdown | Reload
 
+  (** *)
   type exn += Client_closed | Mapping_file_error of string
 
-  (** Create a relay, last int is retries *)
-  val begin_relay :
+  (** Create tunnels requested in a mapping file
+      provided.
+
+[make_tunnels ~stats_server:true tunnel_timeout:3000 ~device_map:"some/path/mapping"]
+
+      creates the tunnels requested for in the {b device_map} and creates a
+      HTTP status server that is accessible at localport 5000. *)
+  val make_tunnels :
     ?log_opts:Logging.log_opts ->
     ?stats_server:bool ->
     tunnel_timeout:int ->
     device_map:Lwt_io.file_name ->
     unit Lwt.t
 
-  (** Perform an action on a relay *)
+  (** Perform an action on running tunnels. *)
   val perform : action -> unit
 
-  (** Get JSON that that describes the currently tunneled devices *)
+  (** Get JSON that describes the currently ready tunnels. *)
   val status : unit -> Yojson.Basic.json Lwt.t
 
 end
