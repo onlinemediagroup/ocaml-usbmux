@@ -165,6 +165,11 @@ module Relay = struct
 
   type action = Shutdown | Reload
 
+  type tunnel = { udid : string;
+                  forwarding : forward list; } [@@deriving yojson]
+  and forward = { local_port : int;
+                  device_port : int; } [@@deriving yojson]
+
   exception Bad_mapping_file of string
 
   let relay_lock = Lwt_mutex.create ()
@@ -240,7 +245,8 @@ module Relay = struct
       end []
     in
     let t = Hashtbl.create (List.length prepped) in
-    prepped |> List.iter (fun (k, v, p_forward, p_forward_two) -> Hashtbl.add t k (v, p_forward, p_forward_two));
+    prepped |> List.iter (fun (k, v, p_forward, p_forward_two) ->
+        Hashtbl.add t k (v, p_forward, p_forward_two));
     t
 
   (* Goal is so that when you do nc local 3008 you actually get

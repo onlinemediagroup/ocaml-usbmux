@@ -27,7 +27,8 @@ Library usbmux
   ByteOpt: -g -w +a-4-40..42-44-45-48
   BuildDepends:
     lwt.unix (>= 2.5.1), lwt.ppx, plist,
-    yojson, stringext, cohttp.lwt
+    yojson, stringext, cohttp.lwt,
+    ppx_deriving_yojson (>= 2.4)
 
 Executable gandalf
   Path: src/app
