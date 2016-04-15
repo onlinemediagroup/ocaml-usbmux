@@ -169,6 +169,11 @@ let begin_program
         | R.Mapping_file_error s ->
           Lwt_io.printl s
           >> exit 8
+        | Failure reason ->
+          reason
+          |> Lwt_io.printlf "Error: %s HINT: You most likely have \
+                             poorly formed JSON, like a trailing comma." >>
+          exit 8
         | e ->
           Lwt_io.printlf "Please report: Unknown exception: %s" (Printexc.to_string e)
           >> exit 9)
