@@ -207,9 +207,15 @@ let top_level_info =
                  This will start up gandalf in listen mode, that is it \
                  will print out whenver a device connects or disconnects";
              `Pre "$(b,$(tname))";
-             `P "2) Start with a mapping file which is of the form \
-                 <udid>:<local_port>:<device_port>, the # character \
-                 starts comments.";
+             `P "2) Start with a mapping file such that # start comments and \
+                 consists of an array of json objects with these fields, \
+                 note that name can be null and is just a nickname for \
+                 this tunnel, other fields are required.";
+             `Pre "# This is a comment\n\
+                   [{\"udid\":\"9cdfac9f74c5e18a6eff3611c0927df5cf4f2eca\", \
+                   \"name\":\"i11\",\n  \
+                   \"forwarding\": [{\"local_port\":2000, \"device_port\":22},\
+                   \n\t\t\t  {\"local_port\":3000, \"device_port\":1122}]}]";
              `Pre "$(b,$(tname)) -m mapping_file";
              `P "2.1) Daemonize $(b,$(tname)) with the -d flag. *NOTE*: You \
                  might need to end up doing that under sudo as $(b,$(tname)) \

@@ -1,3 +1,6 @@
+ocaml-usbmux + gandalf
+======================
+
 This is a library and command line tool to control port forwarding to
 jailbroken iOS devices.
 
@@ -12,8 +15,8 @@ and you get a shell to an iDevice connected over a USB wire.
 The command line tool is called `gandalf` and it requires that
 `usbmuxd` be running. If on OS X then you don't have to do anything,
 if on Linux then you need to have the open source version of
-[usbmuxd](https://github.com/libimobiledevice/usbmuxd). I recommend compiling from source, versions on most package
-managers are old.
+[usbmuxd](https://github.com/libimobiledevice/usbmuxd). I recommend
+compiling from source, versions on most package managers are old.
 
 # Installation
 
@@ -26,8 +29,16 @@ $ brew install opam
 ```
 
 (If on Linux, then get opam via your package manager, aka apt-get or
-whatever). It is important that your compiler is up to date, you can
-check with `opam switch`, make sure its at least >= 4.02.0
+whatever). *NOTE* if you are on Ubuntu, then you need to do:
+
+```shell
+$ add-apt-repository ppa:avsm/ppa
+$ apt-get update
+$ apt-get install ocaml opam
+```
+
+It is important that your compiler is up to date, you can
+check with `opam switch`, make sure its at least >= 4.02.0. 
 
 then
 
@@ -52,9 +63,19 @@ arguments have long-forms as well and `-v` can be added at any time.
     This will start up `gandalf` in listen mode, that is it will print
     out whenever a device connects or disconnects.
 
-2.  Start with a mapping file which is of the form
-    `<udid>:<local_port>:<device_port>`. The `#` character starts
-    comments
+2.  Start with a mapping file such that # start comments and consists
+	of an array of json objects with these fields, note that name can
+	be null and is just a nickname for this tunnel, other fields are
+	required.
+
+	```
+	# This is a comment
+	[{"udid":"9cdfac9f74c5e18a6eff3611c0927df5cf4f2eca",
+      "name":"i11", "forwarding": [{"local_port":2000, "device_port":22},
+	                               {"local_port":3000, "device_port":1122}]
+								   }]
+    ```
+
     
     ```shell
     $ gandalf -m mapping
@@ -108,13 +129,15 @@ $ sudo `which gandalf` --mappings etc/mapping --daemonize --verbose
 # Important Notes and Catches
 
 1.  If you are running this on Linux, then you might get issues with
-    `usbmuxd` having issues when more than around 7 devices are plugged
-    in. This is because multiple threads are trying to call various
-    `libxml2` freeing functions. I have a forked version of `libplist`
-    that `usbmuxd` uses, sans the memory freeing calls. Its available
-    [here](https://github.com/onlinemediagroup/libplist). Compile and install that, then compile and install `usbmuxd`
-    from source. This will leak memory but its not that much at all and
-    I believe it to be a fixed amount.
+    `usbmuxd` having issues when more than around 7 devices are
+    plugged in. This is because multiple threads are trying to call
+    various `libxml2` freeing functions. I have a forked version of
+    `libplist` that `usbmuxd` uses, sans the memory freeing calls. Its
+    available
+    [here](https://github.com/onlinemediagroup/libplist). Compile and
+    install that, then compile and install `usbmuxd` from source. This
+    will leak memory but its not that much at all and I believe it to
+    be a fixed amount.
 
 2.  Another issue you might have is USB3.0. The Linux kernel might crap
     out on you after 13 devices. This is a combination of the kernel

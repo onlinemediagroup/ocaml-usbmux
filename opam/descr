@@ -5,7 +5,7 @@ Simple invocation:
 sudo `which gandalf` --mappings etc/mapping --daemonize --verbose
 
 where etc/mapping is a file such that # start comments and consists of 
-and array of json objects with these fields, note that name can be null 
+an array of json objects with these fields, note that name can be null 
 and is just a nickname for this tunnel, other fields are required.
 
 # This is a comment
