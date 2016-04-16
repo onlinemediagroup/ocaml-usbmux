@@ -6,6 +6,8 @@ module B = Yojson.Basic
 module U = Yojson.Basic.Util
 module P = Printf
 
+external id : 'a -> 'a = "%identity"
+
 module Logging = struct
 
   type log_opts = {log_conns : bool;
@@ -183,7 +185,7 @@ module Relay = struct
        lazy_exceptions,
        tunnels_created,
        tunnel_timeouts) =
-    Hashtbl.create 24, ref "", ref 0, ref 0, ref 0, ref 0
+    Hashtbl.create 24, ref "", ref None, ref 0, ref 0, ref 0
 
   let status_server = Uri.of_string "http://127.0.0.1:5000"
 
@@ -217,13 +219,16 @@ module Relay = struct
     |> Lwt_stream.from
 
 
-  let echo read_timeout ic oc =
+  let echo ic oc =
     Lwt_io.read_chars ic |> fun hook_in ->
     Lwt_stream.peek hook_in >>= function
       (* Force an exception to happen *)
     | None -> Lwt.fail Client_closed
     | _ -> hook_in
-           |> timeout_stream ~after_timeout:(close_chans (ic, oc)) ~read_timeout
+           |> (match !relay_timeout with
+               | None -> id
+               | Some read_timeout ->
+                 timeout_stream ~after_timeout:(close_chans (ic, oc)) ~read_timeout)
            |> Lwt_io.write_chars oc
 
   let load_mappings file_name =
@@ -263,7 +268,7 @@ module Relay = struct
       |> List.iter ~f:(fun tunnel -> Hashtbl.add t ~key:tunnel.udid ~data:tunnel);
       t)
 
-  let do_tunnel tunnel_timeout (udid, (device_id, tunnels)) =
+  let do_tunnel (udid, (device_id, tunnels)) =
     tunnels.forwarding |> Lwt_list.map_p (fun {local_port; device_port} ->
         let open Protocol in
         let server_address = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
@@ -282,10 +287,8 @@ module Relay = struct
               P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
                          Device_id: %d" udid local_port device_port device_id
               |> Logging.log `tunnel;
-              (* Provide the tunneling with a partial function *)
               Lwt.catch (fun () ->
-                  let e = echo tunnel_timeout in
-                  e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
+                  echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
                   Lwt.return (
                     P.sprintf
                       "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
@@ -365,7 +368,7 @@ module Relay = struct
           |> Logging.log `misc;
           accum)
 
-  let start_status_server ~device_mapping ~devices init =
+  let start_status_server ~device_mapping ~devices ~port init =
     let device_list = ref init in
     let start_time = Unix.gettimeofday () in
     let callback _ _ _ =
@@ -374,15 +377,16 @@ module Relay = struct
         let tunnels_data =
           List.map ~f:(fun (udid, (device_id, {name; forwarding; _})) ->
               (`Assoc
-                 [("Nickname", `String (match name with None -> "<Unnamed>" | Some s -> s));
+                 [("Nickname",
+                   `String (match name with None -> "<Unnamed>" | Some s -> s));
                   ("Usbmuxd assigned iDevice ID", `Int device_id);
                   ("iDevice UDID", `String udid);
                   ("Tunnels",
                    (`List
                       (forwarding |> List.map ~f:(fun tunnel ->
                            (`Assoc [("Local Port", `Int tunnel.local_port);
-                                    ("Device Port", `Int tunnel.device_port)] :
-                              B.json)))))] : B.json))
+                                    ("Device Port", `Int tunnel.device_port)]
+                            : B.json)))))] : B.json))
             !device_list
         in
         `Assoc [
@@ -412,7 +416,7 @@ module Relay = struct
       let spin_up_tunnel device_udid new_id =
         try
           let (_, tunnels) = List.assoc device_udid !device_list in
-          (device_udid, (new_id, tunnels)) |> do_tunnel !relay_timeout
+          (device_udid, (new_id, tunnels)) |> do_tunnel
         with
           Not_found ->
           P.sprintf "relay can't create tunnel for device udid: %s" device_udid
@@ -445,14 +449,22 @@ module Relay = struct
           ())
     end;
     (* Status server also gets its own thread *)
-    (fun () -> Cohttp_lwt_unix.Server.create ~mode:(`TCP (`Port 5000)) server)
+    (fun () -> Cohttp_lwt_unix.Server.create ~mode:(`TCP (`Port port)) server)
     |> Lwt.async
 
   let rec make_tunnels
       ?(log_opts=(!Logging.logging_opts))
-      ?(stats_server=true)
-      ~tunnel_timeout
+      ?stats_server
+      ?tunnel_timeout
       ~device_map =
+    (* setup the at_exit handler early on *)
+    (fun () ->
+       if Hashtbl.length running_servers <> 0
+       then Hashtbl.length running_servers
+            |> Lwt_io.printlf "Exited with %d still running; this is a bug."
+       else Lwt.return_unit)
+    |> Lwt_main.at_exit;
+
     (* Set the logging options *)
     Logging.logging_opts := log_opts;
     (* Ask for larger internal buffers for Lwt_io function rather than
@@ -464,11 +476,11 @@ module Relay = struct
 
     (* Set the mapping file, need to hold this path so that when we
        reload, we know where to reload from *)
-    mapping_file := device_map;
+    (mapping_file := device_map)
 
     (* Setup the signal handlers, needed so that we know when to
        reload, shutdown, etc. *)
-    handle_signals tunnel_timeout;
+    |> handle_signals;
     load_mappings !mapping_file >>= fun device_mapping ->
     let devices = Hashtbl.create 24 in
     try%lwt
@@ -492,18 +504,14 @@ module Relay = struct
       let device_alist =
         device_alist_of_hashtable ~device_mapping ~devices
       in
-      (* Create, start a simple HTTP status server. We also register
-         the at_exit function here because it ought to happen just
-         once, like our status server *)
-      if stats_server then begin
-        start_status_server ~device_mapping ~devices device_alist;
-        (fun () ->
-           if Hashtbl.length running_servers <> 0
-           then
-             Hashtbl.length running_servers
-             |> Lwt_io.printlf "Exited with %d still running; this is a bug."
-           else Lwt.return_unit)
-        |> Lwt_main.at_exit
+      begin
+        match stats_server with
+        | None -> Logging.log `misc "Did not create a status server"
+        | Some port ->
+          (* Create, start a simple HTTP status server. We also register
+             the at_exit function here because it ought to happen just
+             once, like our status server *)
+          start_status_server ~device_mapping ~devices ~port device_alist;
       end;
       let rec forever () =
         (* This thread should never return but its better to be safe
@@ -512,11 +520,11 @@ module Relay = struct
       in
       (* Create, start the tunnels *)
       device_alist
-      |> Lwt_list.iter_p (do_tunnel tunnel_timeout) >>
+      |> Lwt_list.iter_p do_tunnel >>
       (* Wait forever *)
       forever ()
 
-  and do_restart tunnel_timeout =
+  and do_restart () =
     if Sys.file_exists !mapping_file then begin
       complete_shutdown ();
       Logging.log `misc "Restarting relay with reloaded mappings";
@@ -524,8 +532,8 @@ module Relay = struct
       make_tunnels
         (* Use existing status server *)
         ~log_opts:!Logging.logging_opts
-        ~stats_server:false
-        ~tunnel_timeout
+        ?stats_server:None
+        ?tunnel_timeout:None
         ~device_map:!mapping_file
       |> Lwt.ignore_result
     end else
@@ -535,13 +543,13 @@ module Relay = struct
 
   (* Mutually recursive function, handle_signals needs name of
      make_tunnels and make_tunnels needs the name handle_signals *)
-  and handle_signals tunnel_timeout =
+  and handle_signals () =
     Sys.([ (* Broken SSH pipes shouldn't exit our program *)
         signal sigpipe Signal_ignore;
         (* Stop the running threads, call make_tunnels again *)
         signal
           sigusr1
-          (Signal_handle (fun _ -> do_restart tunnel_timeout));
+          (Signal_handle (fun _ -> do_restart ()));
         (* Shutdown the servers, relays then exit *)
         signal sigusr2 (Signal_handle begin fun _ ->
             let relay_count = Hashtbl.length running_servers in

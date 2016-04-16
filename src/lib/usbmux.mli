@@ -86,8 +86,8 @@ module Relay : sig
       HTTP status server that is accessible at localport 5000. *)
   val make_tunnels :
     ?log_opts:Logging.log_opts ->
-    ?stats_server:bool ->
-    tunnel_timeout:int ->
+    ?stats_server:int ->
+    ?tunnel_timeout:int ->
     device_map:Lwt_io.file_name ->
     unit Lwt.t
 

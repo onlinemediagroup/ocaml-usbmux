@@ -4,53 +4,63 @@ let be_verbose =
   let doc =
     "Loudest logging setting, equivalent to turning on \
      log_connections, log_async_exceptions, \
-     log_plugged_action and log_everything_else"
+     log_plugged_action and log_everything_else."
   in
-  Arg.(value & flag & info ["v";"verbose"] ~doc)
+  Arg.(value & flag & info ["v"; "verbose"] ~doc)
 
 let forward_connection_file =
-  let doc = "Simple file mapping udid to ports, expecting a file \
-             like 123gfdgefrgt234:2000:22"
+  let doc =
+    "A JSON based mapping from udid to local ports to forward, \
+     read further down example 2 for an example mapping."
   in
   Arg.(value & opt (some non_dir_file) None & info ["m"; "mappings"] ~doc)
 
 let do_daemonize =
-  let doc = "Whether $(b,$(tname)) should run as a daemon" in
-  Arg.(value & flag & info ["d";"daemonize"] ~doc)
+  let doc = "Whether $(b,$(tname)) should run as a daemon." in
+  Arg.(value & flag & info ["d"; "daemonize"] ~doc)
 
 let do_exit =
-  let doc = "Gracefully exit current running relay" in
-  Arg.(value & flag & info ["e";"exit"] ~doc)
+  let doc = "Gracefully exit currently running tunnels." in
+  Arg.(value & flag & info ["e"; "exit"] ~doc)
 
 let tunneling_timeout =
-  let doc = "How many seconds $(b,$(tname)) will wait on \
-             inactivity on the tunnel before closing the tunnel"
+  let doc = "If provided then how many seconds $(b,$(tname)) \
+             will wait on inactivity on the tunnel before \
+             closing the tunnel."
   in
-  Arg.(value & opt int (60 * 5) & info ["o";"timeout"] ~doc)
+  Arg.(value & opt (some int) None & info ["o"; "timeout"] ~doc)
 
 let reload_mapping =
   let doc = "Stop running threads and reload the mappings \
              from the original mapping file path."
   in
-  Arg.(value & flag & info ["r";"reload"] ~doc)
+  Arg.(value & flag & info ["r"; "reload"] ~doc)
+
+let status_server_port =
+  let doc = "If provided then $(b,$(tname)) creates a HTTP \
+             server on given port."
+  in
+  Arg.(value & opt (some int) (Some 5000) & info ["status_port"] ~doc)
 
 let status =
-  let doc = "Pretty print json of currently tunneled devices" in
-  Arg.(value & flag & info ["s";"status"] ~doc)
+  let doc = "Pretty print json of currently tunneled devices, \
+             only works if $(b,$(name)) was started with a status server."
+  in
+  Arg.(value & flag & info ["s"; "status"] ~doc)
 
 let log_connections =
   let doc =
     "Log individual tunnelings, this includes relay \
-     open, close and can be quite noisy"
+     open, close and can be quite noisy."
   in
   Arg.(value & flag & info ["log_connections"] ~doc)
 
 let log_async_exceptions =
-  let doc = "Log asynchronous exceptions" in
+  let doc = "Log asynchronous exceptions." in
   Arg.(value & flag & info ["log_async_exceptions"] ~doc)
 
 let log_plugged_action =
-  let doc = "Log when a device is plugged in and plugged out" in
+  let doc = "Log when a device is plugged in and plugged out." in
   Arg.(value & flag & info ["log_plugged_action"] ~doc)
 
 let log_everything_else =

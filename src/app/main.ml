@@ -99,7 +99,8 @@ let begin_program
     log_conns
     log_async_exn
     log_plugged_inout
-    log_everything_else =
+    log_everything_else
+    stats_server =
   let starting_place = Sys.getcwd () in
   if do_daemonize then begin
     (* This order matters, must get this done before anything Lwt
@@ -145,7 +146,7 @@ let begin_program
         in
         Usbmux.Logging.(
           let relay_with =
-            R.make_tunnels ~stats_server:true ~tunnel_timeout ~device_map
+            R.make_tunnels ?stats_server ?tunnel_timeout ~device_map
           in
           if very_loud
           then relay_with
@@ -162,8 +163,8 @@ let begin_program
            Lwt_io.printl "Error: Check if usbmuxd is running" >>
            exit 7
          | R.Mapping_file_error s ->
-           Lwt_io.printl s
-           >> exit 8
+           Lwt_io.printl s >>
+           exit 8
          | Failure reason ->
            reason
            |> Lwt_io.printlf "Error: %s HINT: You most likely have \
@@ -188,7 +189,8 @@ let entry_point = let open Gandalf_args in
         $ log_connections
         $ log_async_exceptions
         $ log_plugged_action
-        $ log_everything_else)
+        $ log_everything_else
+        $ status_server_port)
 
 let top_level_info =
   let doc = "Control TCP forwarding for iDevices" in
