@@ -95,6 +95,6 @@ module Relay : sig
   val perform : action -> unit
 
   (** Get JSON that describes the currently ready tunnels. *)
-  val status : unit -> Yojson.Basic.json Lwt.t
+  val status : port:int -> Yojson.Basic.json Lwt.t
 
 end

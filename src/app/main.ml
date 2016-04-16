@@ -6,7 +6,7 @@ module P = Usbmux.Protocol
 module R = Usbmux.Relay
 module U = Yojson.Basic.Util
 
-let show_status () =
+let show_status port : unit =
   (* Ripped from cmdliner *)
   let find_cmd cmds =
     let test, null = match Sys.os_type with
@@ -24,7 +24,7 @@ let show_status () =
   in
   Lwt_main.run begin
     try%lwt
-      R.status () >>= fun as_json ->
+      R.status ~port >>= fun as_json ->
       let (uptime, payload, lazy_exns,
            tunnels_created, tunnel_timeouts, mapping_file) =
         U.(member "uptime" as_json |> to_float,
@@ -65,7 +65,9 @@ let show_status () =
         (Sys.command (Printf.sprintf "%s %s" p f_name) |> ignore;
          Lwt_unix.unlink f_name)
     with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
-      Lwt_io.printl "Error: Couldn't get status, check if gandalf is running" >>
+      Lwt_io.printl "Error: Couldn't get status, check if \
+                     gandalf is running (Also did you start gandalf \
+                     with --status_port?)" >>
       exit 6
   end;
   exit 0
@@ -107,9 +109,9 @@ let begin_program
        related *)
     Lwt_daemon.daemonize ~syslog:true ();
     (* Ensure daemon has time to setup *)
-    Unix.sleep 1;
-    (* Might require super user permissions *)
-    create_pid_file ()
+    Unix.sleep 1
+      (* Might require super user permissions *)
+    |> create_pid_file
   end;
   if do_exit then R.(perform Shutdown);
   begin
@@ -121,9 +123,9 @@ let begin_program
         |> prerr_endline;
         exit 5
   end;
-
-  if do_status then show_status ();
-
+  (match (do_status, stats_server) with
+   | (true, Some port) -> show_status port
+   | _ -> ());
   Lwt.catch (fun () ->
       (* Now we start spinning up Lwt threads *)
       match port_pairs with

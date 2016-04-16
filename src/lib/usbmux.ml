@@ -187,7 +187,9 @@ module Relay = struct
        tunnel_timeouts) =
     Hashtbl.create 24, ref "", ref None, ref 0, ref 0, ref 0
 
-  let status_server = Uri.of_string "http://127.0.0.1:5000"
+  let status_server port =
+    P.sprintf "http://127.0.0.1:%d" port
+    |> Uri.of_string
 
   let relay_pid () =
     let open_pid_file = open_in pid_file in
@@ -200,10 +202,10 @@ module Relay = struct
   let timeout_task ~after_timeout n =
     let t = fst (Lwt.task ()) in
     let timeout =
-      Lwt_timeout.create n begin fun () ->
-        Lwt.cancel t;
-        after_timeout () |> Lwt.ignore_result
-      end
+      (fun () ->
+         Lwt.cancel t;
+         after_timeout () |> Lwt.ignore_result)
+      |> Lwt_timeout.create n
     in
     Lwt_timeout.start timeout;
     Lwt.on_cancel t (fun () -> Lwt_timeout.stop timeout);
@@ -513,11 +515,9 @@ module Relay = struct
              once, like our status server *)
           start_status_server ~device_mapping ~devices ~port device_alist;
       end;
-      let rec forever () =
-        (* This thread should never return but its better to be safe
-           than sorry*)
-        fst (Lwt.wait ()) >>= forever
-      in
+      (* This thread should never return but its better to be safe
+         than sorry *)
+      let rec forever () = fst (Lwt.wait ()) >>= forever in
       (* Create, start the tunnels *)
       device_alist
       |> Lwt_list.iter_p do_tunnel >>
@@ -588,8 +588,8 @@ module Relay = struct
         exit 3
     )
 
-  let status () =
-    Cohttp_lwt_unix.Client.get status_server >>= fun (_, body) ->
+  let status ~port =
+    Cohttp_lwt_unix.Client.get (status_server port) >>= fun (_, body) ->
     Cohttp_lwt_body.to_string body >|= Yojson.Basic.from_string
 
 end

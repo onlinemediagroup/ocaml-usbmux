@@ -11,7 +11,7 @@ let be_verbose =
 let forward_connection_file =
   let doc =
     "A JSON based mapping from udid to local ports to forward, \
-     read further down example 2 for an example mapping."
+     read further down for an example mapping."
   in
   Arg.(value & opt (some non_dir_file) None & info ["m"; "mappings"] ~doc)
 
@@ -37,14 +37,12 @@ let reload_mapping =
   Arg.(value & flag & info ["r"; "reload"] ~doc)
 
 let status_server_port =
-  let doc = "If provided then $(b,$(tname)) creates a HTTP \
-             server on given port."
-  in
+  let doc = "Port that $(b,$(tname))'s status server will use" in
   Arg.(value & opt (some int) (Some 5000) & info ["status_port"] ~doc)
 
 let status =
-  let doc = "Pretty print json of currently tunneled devices, \
-             only works if $(b,$(name)) was started with a status server."
+  let doc = "Metadata and pretty print json of \
+             currently tunneled devices."
   in
   Arg.(value & flag & info ["s"; "status"] ~doc)
 
