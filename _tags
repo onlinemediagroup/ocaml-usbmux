@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 030ba4a94b763b35ebd6315d5d1385e6)
+# DO NOT EDIT (digest: 99b3e78cc158b3963c3e2d29a04058bf)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -24,7 +24,7 @@ true: annot, bin_annot
 <src/lib/*.ml{,i,y}>: package(lwt.ppx)
 <src/lib/*.ml{,i,y}>: package(lwt.unix)
 <src/lib/*.ml{,i,y}>: package(plist)
-<src/lib/*.ml{,i,y}>: package(stringext)
+<src/lib/*.ml{,i,y}>: package(ppx_deriving_yojson)
 <src/lib/*.ml{,i,y}>: package(yojson)
 # Executable gandalf
 "src/app/main.native": oasis_executable_gandalf_byte
@@ -36,7 +36,7 @@ true: annot, bin_annot
 "src/app/main.native": package(lwt.ppx)
 "src/app/main.native": package(lwt.unix)
 "src/app/main.native": package(plist)
-"src/app/main.native": package(stringext)
+"src/app/main.native": package(ppx_deriving_yojson)
 "src/app/main.native": package(yojson)
 "src/app/main.native": use_usbmux
 <src/app/*.ml{,i,y}>: package(cmdliner)
@@ -44,7 +44,7 @@ true: annot, bin_annot
 <src/app/*.ml{,i,y}>: package(lwt.ppx)
 <src/app/*.ml{,i,y}>: package(lwt.unix)
 <src/app/*.ml{,i,y}>: package(plist)
-<src/app/*.ml{,i,y}>: package(stringext)
+<src/app/*.ml{,i,y}>: package(ppx_deriving_yojson)
 <src/app/*.ml{,i,y}>: package(yojson)
 <src/app/*.ml{,i,y}>: use_usbmux
 # OASIS_STOP

@@ -65,7 +65,7 @@ let show_status () =
         (Sys.command (Printf.sprintf "%s %s" p f_name) |> ignore;
          Lwt_unix.unlink f_name)
     with Unix.Unix_error(Unix.ECONNREFUSED, _, _) ->
-      Lwt_io.printl "Couldn't get status, check if gandalf is running" >>
+      Lwt_io.printl "Error: Couldn't get status, check if gandalf is running" >>
       exit 6
   end;
   exit 0
@@ -82,7 +82,7 @@ let create_pid_file () =
       close open_pid_file
     with Unix_error(EACCES, _, _) ->
       Printf.sprintf
-        "Couldn't open pid file %s, make sure you have right permissions"
+        "Error: Couldn't open pid file %s, make sure you have right permissions"
         Usbmux.pid_file
       |> prerr_endline;
       exit 4
@@ -115,37 +115,29 @@ let begin_program
     if do_reload_mapping then
       try R.(perform Reload)
       with Sys_error _ ->
-        (Printf.sprintf "Could not open pid file, are you sure gandalf was \
-                         already running?")
+        (Printf.sprintf "Error: Could not open pid file, are you \
+                         sure gandalf was already running?")
         |> prerr_endline;
         exit 5
   end;
 
   if do_status then show_status ();
 
-  (* Now we start spinning up Lwt threads *)
-  match port_pairs with
-  | None ->
-    if do_daemonize
-    then "Warning: Only in listen mode, not daemonizing" |> prerr_endline;
-    Lwt.catch
-      P.(create_listener ~event_cb:(function
-          | Event Attached { serial_number = s; connection_speed = _;
-                             connection_type = _; product_id = _; location_id = _;
-                             device_id = d; } ->
-            Lwt_io.printlf "Device %d with serial number: %s connected" d s
-          | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
-          | _ -> Lwt.return ()))
-      Unix.(function
-          | Unix_error((ECONNREFUSED | ENOENT), _, _) ->
-            Lwt_io.printl "Check if usbmuxd is running" >>
-            exit 7
-          | e ->
-            Printexc.to_string e
-            |> Lwt_io.printlf "Please report: Unknown exception: %s" >>
-            exit 9)
-  | Some device_map ->
-    Lwt.catch (fun () ->
+  Lwt.catch (fun () ->
+      (* Now we start spinning up Lwt threads *)
+      match port_pairs with
+      | None ->
+        if do_daemonize
+        then "Warning: Only in listen mode, not daemonizing" |> prerr_endline;
+        P.(create_listener ~event_cb:(function
+            | Event Attached {serial_number = s; connection_speed = _;
+                              connection_type = _; product_id = _;
+                              location_id = _; device_id = d} ->
+              Lwt_io.printlf "Device %d with serial number: %s connected" d s
+            | Event Detached d -> Lwt_io.printlf "Device %d disconnected" d
+            | _ -> Lwt.return ())
+            ())
+      | Some device_map ->
         let device_map =
           if Filename.is_relative device_map
           then Printf.sprintf "%s/%s" starting_place device_map
@@ -160,23 +152,28 @@ let begin_program
               ~log_opts:{log_conns = true;
                          log_async_exn = true;
                          log_plugged_inout = true;
-                         log_everything_else = true;}
+                         log_everything_else = true}
           else relay_with
               ~log_opts:{log_conns; log_async_exn;
-                         log_plugged_inout; log_everything_else;}
-        ))
-      (function
-        | R.Mapping_file_error s ->
-          Lwt_io.printl s
-          >> exit 8
-        | Failure reason ->
-          reason
-          |> Lwt_io.printlf "Error: %s HINT: You most likely have \
-                             poorly formed JSON, like a trailing comma." >>
-          exit 8
-        | e ->
-          Lwt_io.printlf "Please report: Unknown exception: %s" (Printexc.to_string e)
-          >> exit 9)
+                         log_plugged_inout; log_everything_else})
+    )
+    (fun exn -> Unix.(match exn with
+         | Unix_error((ECONNREFUSED | ENOENT), _, _) ->
+           Lwt_io.printl "Error: Check if usbmuxd is running" >>
+           exit 7
+         | R.Mapping_file_error s ->
+           Lwt_io.printl s
+           >> exit 8
+         | Failure reason ->
+           reason
+           |> Lwt_io.printlf "Error: %s HINT: You most likely have \
+                              poorly formed JSON, like a trailing comma." >>
+           exit 8
+         | e ->
+           Printexc.to_string e
+           |> Lwt_io.printlf "Error: Please report: Unknown exception: %s" >>
+           exit 9
+       ))
 
 let entry_point = let open Gandalf_args in
   Term.(pure
@@ -198,7 +195,7 @@ let top_level_info =
   let man = [`S "DESCRIPTION";
              `P "$(b,$(tname)) lets you port forward local ports to specific \
                  ports on your jailbroken iDevices like iPhone, iPad, iTouch \
-                 over USB; think about the ssh use-case.  You need to \
+                 over USB; think about the ssh use-case. You need to \
                  have the usbmuxd daemon running, on OS X this means you \
                  don't have to do anything but on Linux you need to \
                  install and run it.";

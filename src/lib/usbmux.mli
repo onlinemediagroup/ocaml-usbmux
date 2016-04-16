@@ -73,13 +73,14 @@ module Relay : sig
   (** Actions that can be performed on running relays *)
   type action = Shutdown | Reload
 
-  (** *)
-  type exn += Client_closed | Mapping_file_error of string
+  (** Exception raised when the mapping file is incorrectly made,
+      probably a JSON error *)
+  type exn += Mapping_file_error of string
 
   (** Create tunnels requested in a mapping file
       provided.
 
-[make_tunnels ~stats_server:true tunnel_timeout:3000 ~device_map:"some/path/mapping"]
+      [make_tunnels ~stats_server:true tunnel_timeout:3000 ~device_map:"some/path/mapping"]
 
       creates the tunnels requested for in the {b device_map} and creates a
       HTTP status server that is accessible at localport 5000. *)

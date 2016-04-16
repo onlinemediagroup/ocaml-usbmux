@@ -8,10 +8,10 @@ module P = Printf
 
 module Logging = struct
 
-  type log_opts = { log_conns : bool;
-                    log_async_exn : bool;
-                    log_plugged_inout : bool;
-                    log_everything_else : bool; }
+  type log_opts = {log_conns : bool;
+                   log_async_exn : bool;
+                   log_plugged_inout : bool;
+                   log_everything_else : bool}
 
   let (conn_section, async_exn, plugged_inout, everything_else) =
     Lwt_log.Section.make "connections",
@@ -21,7 +21,7 @@ module Logging = struct
 
   let logging_opts =
     ref {log_conns = false; log_async_exn = false;
-         log_plugged_inout = false; log_everything_else = false;}
+         log_plugged_inout = false; log_everything_else = false}
 
   let () = Lwt_log.add_rule "*" Lwt_log.Info
 
@@ -211,8 +211,8 @@ module Relay = struct
     (fun () ->
        Lwt.pick
          (* Either get data off the stream or timeout after a period
-            of time, we don't want to keep relays open that have no
-            activity on them *)
+             of time, we don't want to keep relays open that have no
+             activity on them *)
          [Lwt_stream.get stream; timeout_task ~after_timeout read_timeout])
     |> Lwt_stream.from
 
@@ -264,70 +264,69 @@ module Relay = struct
       t)
 
   let do_tunnel tunnel_timeout (udid, (device_id, tunnels)) =
-    tunnels.forwarding |> Lwt_list.iter_p (fun {local_port; device_port} ->
+    tunnels.forwarding |> Lwt_list.map_p (fun {local_port; device_port} ->
         let open Protocol in
         let server_address = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
-        let server =
-          Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
-            Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
-              let msg = connect_message ~device_id ~device_port in
-              write_header ~total_len:(msg_length msg) mux_oc >>
-              Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
-              (* Read the reply, should be good to start just raw piping *)
-              read_header mux_ic >>= fun (msg_len, _, _, _) ->
-              let buffer = Bytes.create (msg_len - header_length) in
-              Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
-              match parse_reply buffer with
-              | Result Success ->
-                tunnels_created := !tunnels_created + 1;
-                P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
-                           Device_id: %d" udid local_port device_port device_id
-                |> Logging.log `tunnel;
-                (* Provide the tunneling with a partial function *)
-                Lwt.catch (fun () ->
-                    let e = echo tunnel_timeout in
-                    e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
-                    Lwt.return (
-                      P.sprintf
-                        "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+        Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
+          Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
+            let msg = connect_message ~device_id ~device_port in
+            write_header ~total_len:(msg_length msg) mux_oc >>
+            Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
+            (* Read the reply, should be good to start just raw piping *)
+            read_header mux_ic >>= fun (msg_len, _, _, _) ->
+            let buffer = Bytes.create (msg_len - header_length) in
+            Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
+            match parse_reply buffer with
+            | Result Success ->
+              tunnels_created := !tunnels_created + 1;
+              P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
                          Device_id: %d" udid local_port device_port device_id
-                      |> Logging.log `tunnel))
-                  (function
-                    | Client_closed ->
-                      Logging.log `tunnel "Client closed with an exception"
-                      |> close_chans (mux_ic, mux_oc) >>=
-                      close_chans (tcp_ic, tcp_oc)
-                    | otherwise -> Lwt.fail otherwise)
-              | Result Device_requested_not_connected ->
-                P.sprintf "Tunneling: Device requested was not connected. \
-                           Udid: %s Device_id: %d" udid device_id
-                |> Logging.log `misc
-                |> Lwt.return
-              | Result Port_requested_not_available ->
-                P.sprintf "Tunneling. Port requested, %d, wasn't available. \
-                           Udid: %s Port: %d Device_id: %d"
-                  device_port udid local_port device_id
-                |> Logging.log `misc
-                |> Lwt.return
-              | _ -> Lwt.return_unit
-            end
-            (* Finished tunneling, now ensures that we close the
-               chans. This can rarely throw a lazy value exception that is
-               caught in the async hook exception handler, happens
-               with_connection and establish_server themselves have their
-               own lazy logic to close the sockets *)
-            >>= close_chans (tcp_ic, tcp_oc)
-            |> Lwt.ignore_result
+              |> Logging.log `tunnel;
+              (* Provide the tunneling with a partial function *)
+              Lwt.catch (fun () ->
+                  let e = echo tunnel_timeout in
+                  e tcp_ic mux_oc <&> e mux_ic tcp_oc >>
+                  Lwt.return (
+                    P.sprintf
+                      "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+                       Device_id: %d" udid local_port device_port device_id
+                    |> Logging.log `tunnel))
+                (function
+                  | Client_closed ->
+                    Logging.log `tunnel "Client closed with an exception"
+                    |> close_chans (mux_ic, mux_oc) >>=
+                    close_chans (tcp_ic, tcp_oc)
+                  | otherwise -> Lwt.fail otherwise)
+            | Result Device_requested_not_connected ->
+              P.sprintf "Tunneling: Device requested was not connected. \
+                         Udid: %s Device_id: %d" udid device_id
+              |> Logging.log `misc
+              |> Lwt.return
+            | Result Port_requested_not_available ->
+              P.sprintf "Tunneling. Port requested, %d, wasn't available. \
+                         Udid: %s Port: %d Device_id: %d"
+                device_port udid local_port device_id
+              |> Logging.log `misc
+              |> Lwt.return
+            | _ -> Lwt.return_unit
           end
-        in
-        (* Register the server *)
-        (fun () -> Lwt.return (Hashtbl.add running_servers ~key:device_id ~data:server))
-        |> Lwt_mutex.with_lock relay_lock)
-
+          (* Finished tunneling, now ensures that we close the
+             chans. This can rarely throw a lazy value exception that
+             is caught in the async hook exception handler, happens
+             with_connection and establish_server as they have their
+             own lazy logic to close the sockets *)
+          >>= close_chans (tcp_ic, tcp_oc)
+          |> Lwt.ignore_result
+        end
+        |> Lwt.return) >>= fun servers ->
+    (* Register the servers for this particular device id *)
+    (fun () -> Lwt.return (Hashtbl.add running_servers ~key:device_id ~data:servers))
+    |> Lwt_mutex.with_lock relay_lock
 
   let complete_shutdown () =
     (* Kill the servers first *)
-    running_servers |> Hashtbl.iter ~f:(fun ~key:_ ~data -> Lwt_io.shutdown_server data);
+    running_servers
+    |> Hashtbl.iter ~f:(fun ~key:_ ~data -> List.iter ~f:Lwt_io.shutdown_server data);
     P.sprintf "Completed shutting down %d servers" (Hashtbl.length running_servers)
     |> Logging.log `misc;
     Hashtbl.reset running_servers
@@ -366,8 +365,8 @@ module Relay = struct
           |> Logging.log `misc;
           accum)
 
-  let start_status_server ~device_mapping ~devices =
-    let device_list = ref (device_alist_of_hashtable ~device_mapping ~devices) in
+  let start_status_server ~device_mapping ~devices init =
+    let device_list = ref init in
     let start_time = Unix.gettimeofday () in
     let callback _ _ _ =
       let uptime = Unix.gettimeofday () -. start_time in
@@ -406,7 +405,7 @@ module Relay = struct
       let shutdown_and_prune d =
         try
           (Hashtbl.find running_servers d)
-          |> Lwt_io.shutdown_server;
+          |> List.iter ~f:Lwt_io.shutdown_server;
           Hashtbl.remove running_servers d
         with Not_found -> ()
       in
@@ -429,19 +428,18 @@ module Relay = struct
             if not (Hashtbl.mem devices d)
             then
               (* Two cases, devices that have been known or unknown devices *)
-              load_mappings !mapping_file >|= fun device_mapping ->
-              Hashtbl.add devices ~key:d ~data:s;
-              device_list := device_alist_of_hashtable ~device_mapping ~devices;
-              spin_up_tunnel s d |> Lwt.ignore_result
+              (Hashtbl.add devices ~key:d ~data:s;
+               device_list := device_alist_of_hashtable ~device_mapping ~devices;
+               spin_up_tunnel s d)
             else
               Lwt.return ()
           | Event Detached d ->
             P.sprintf "Device %d disconnected" d
             |> Logging.log `plugged_inout;
-            load_mappings !mapping_file >|= fun device_mapping ->
-            shutdown_and_prune d;
-            Hashtbl.remove devices d;
-            device_list := device_alist_of_hashtable ~device_mapping ~devices
+            (shutdown_and_prune d;
+             Hashtbl.remove devices d;
+             device_list := device_alist_of_hashtable ~device_mapping ~devices)
+            |> Lwt.return
           | _ -> Lwt.return_unit
         end
           ())
@@ -491,17 +489,19 @@ module Relay = struct
              ())]
     with
       Lwt_unix.Timeout ->
+      let device_alist =
+        device_alist_of_hashtable ~device_mapping ~devices
+      in
       (* Create, start a simple HTTP status server. We also register
          the at_exit function here because it ought to happen just
          once, like our status server *)
       if stats_server then begin
-        start_status_server ~device_mapping ~devices;
+        start_status_server ~device_mapping ~devices device_alist;
         (fun () ->
            if Hashtbl.length running_servers <> 0
            then
-             Lwt_io.printlf
-               "Exited with %d still running; this is a bug."
-               (Hashtbl.length running_servers)
+             Hashtbl.length running_servers
+             |> Lwt_io.printlf "Exited with %d still running; this is a bug."
            else Lwt.return_unit)
         |> Lwt_main.at_exit
       end;
@@ -511,8 +511,8 @@ module Relay = struct
         fst (Lwt.wait ()) >>= forever
       in
       (* Create, start the tunnels *)
-      ((device_alist_of_hashtable ~device_mapping ~devices)
-       |> Lwt_list.iter_p (do_tunnel tunnel_timeout)) >>
+      device_alist
+      |> Lwt_list.iter_p (do_tunnel tunnel_timeout) >>
       (* Wait forever *)
       forever ()
 
