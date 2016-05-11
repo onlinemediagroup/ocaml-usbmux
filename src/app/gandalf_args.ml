@@ -8,6 +8,12 @@ let be_verbose =
   in
   Arg.(value & flag & info ["v"; "verbose"] ~doc)
 
+let ignore_all_unix_errors =
+  let doc = "Ignore all Unix exceptions, most likely raised by Usbmuxd. \
+             Warning: this may hide errors"
+  in
+  Arg.(value & flag & info ["ignore_all_unix_exceptions"] ~doc)
+
 let forward_connection_file =
   let doc =
     "A JSON based mapping from udid to local ports to forward, \

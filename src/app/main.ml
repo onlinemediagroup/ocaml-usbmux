@@ -102,7 +102,8 @@ let begin_program
     log_async_exn
     log_plugged_inout
     log_everything_else
-    stats_server =
+    stats_server
+    ignore_unix_exn_ =
   let starting_place = Sys.getcwd () in
   if do_daemonize then begin
     (* This order matters, must get this done before anything Lwt
@@ -148,7 +149,11 @@ let begin_program
         in
         Usbmux.Logging.(
           let relay_with =
-            R.make_tunnels ?stats_server ?tunnel_timeout ~device_map
+            R.make_tunnels
+              ~ignore_unix_exn:ignore_unix_exn_
+              ?stats_server
+              ?tunnel_timeout
+              ~device_map
           in
           if very_loud
           then relay_with
@@ -175,7 +180,7 @@ let begin_program
          | e ->
            Printexc.to_string e
            |> Lwt_io.printlf "Error: Please report: Unknown exception: %s" >>
-           exit 9
+           exit 10
        ))
 
 let entry_point = let open Gandalf_args in
@@ -192,7 +197,8 @@ let entry_point = let open Gandalf_args in
         $ log_async_exceptions
         $ log_plugged_action
         $ log_everything_else
-        $ status_server_port)
+        $ status_server_port
+        $ ignore_all_unix_errors)
 
 let top_level_info =
   let doc = "Control TCP forwarding for iDevices" in
@@ -243,7 +249,9 @@ let top_level_info =
              `P "6 -> Check if $(b,$(tname)) is even running";
              `P "7 -> Check if usbmuxd is running";
              `P "8 -> Error in mapping file, check your json";
-             `P "9 -> Unknown reason, please report";
+             `P "9 -> Some kind of Unix error, most likely caused by usbmuxd, \
+                 check misc section logs";
+             `P "10 -> Unknown reason, please report";
              `S "AUTHOR";
              `P "Edgar Aroutiounian <edgar.factorial@gmail.com>"]
   in

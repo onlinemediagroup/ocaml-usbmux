@@ -184,8 +184,9 @@ module Relay = struct
        relay_timeout,
        lazy_exceptions,
        tunnels_created,
-       tunnel_timeouts) =
-    Hashtbl.create 24, ref "", ref None, ref 0, ref 0, ref 0
+       tunnel_timeouts,
+       unix_exn_exit_program) =
+    Hashtbl.create 24, ref "", ref None, ref 0, ref 0, ref 0, ref false
 
   let status_server port =
     P.sprintf "http://127.0.0.1:%d" port
@@ -215,8 +216,8 @@ module Relay = struct
     (fun () ->
        Lwt.pick
          (* Either get data off the stream or timeout after a period
-             of time, we don't want to keep relays open that have no
-             activity on them *)
+            of time, we don't want to keep relays open that have no
+            activity on them *)
          [Lwt_stream.get stream; timeout_task ~after_timeout read_timeout])
     |> Lwt_stream.from
 
@@ -352,6 +353,9 @@ module Relay = struct
             lazy_exceptions := !lazy_exceptions + 1;
             "(Safe to ignore) OCaml lazy value exception from TCP tunneling"
             |> log `misc
+          | Unix_error(e, _, _) ->
+            error_message e |> P.sprintf "Unix based error: %s" |> log `misc;
+            if !unix_exn_exit_program then exit 9
           | exn ->
             "Please report, this is an unhandled async exception (A bug)"
             |> log (`exn exn);
@@ -455,6 +459,7 @@ module Relay = struct
     |> Lwt.async
 
   let rec make_tunnels
+      ?(ignore_unix_exn=false)
       ?(log_opts=(!Logging.logging_opts))
       ?stats_server
       ?tunnel_timeout
@@ -466,6 +471,9 @@ module Relay = struct
             |> Lwt_io.printlf "Exited with %d still running; this is a bug."
        else Lwt.return_unit)
     |> Lwt_main.at_exit;
+
+    (* Should Unix exceptions exit the program? *)
+    unix_exn_exit_program := ignore_unix_exn;
 
     (* Set the logging options *)
     Logging.logging_opts := log_opts;
@@ -531,6 +539,7 @@ module Relay = struct
       (* Spin it up again *)
       make_tunnels
         (* Use existing status server *)
+        ~ignore_unix_exn:!unix_exn_exit_program
         ~log_opts:!Logging.logging_opts
         ?stats_server:None
         ?tunnel_timeout:None
