@@ -355,7 +355,7 @@ module Relay = struct
             |> log `misc
           | Unix_error(e, _, _) ->
             error_message e |> P.sprintf "Unix based error: %s" |> log `misc;
-            if !unix_exn_exit_program then exit 9
+            if not !unix_exn_exit_program then exit 9
           | exn ->
             "Please report, this is an unhandled async exception (A bug)"
             |> log (`exn exn);
