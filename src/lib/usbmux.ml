@@ -272,7 +272,7 @@ module Relay = struct
       t)
 
   let do_tunnel (udid, (device_id, tunnels)) =
-    begin 
+    begin
       tunnels.forwarding |> Lwt_list.map_p (fun {local_port; device_port} ->
           let open Protocol in
           let server_address = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
@@ -532,7 +532,6 @@ module Relay = struct
       (* Create, start the tunnels *)
       device_alist
       |> Lwt_list.iter_p (Lwt_preemptive.detach do_tunnel) >>
-
       (* Wait forever *)
       forever ()
 
