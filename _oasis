@@ -28,7 +28,8 @@ Library usbmux
   BuildDepends:
     lwt.unix (>= 2.5.1), lwt.ppx, plist,
     yojson, cohttp.lwt,
-    ppx_deriving_yojson (>= 2.4)
+    ppx_deriving_yojson (>= 2.4),
+    lwt.preemptive, threads
 
 Executable gandalf
   Path: src/app
