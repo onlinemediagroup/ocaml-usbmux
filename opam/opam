@@ -1,7 +1,7 @@
 # -*- conf -*-
 opam-version: "1.2"
 name: "usbmux"
-version: "1.2.1"
+version: "1.3.0"
 maintainer: "Edgar Aroutiounian <edgar.factorial@gmail.com>"
 authors: [ "Edgar Aroutiounian <edgar.factorial@gmail.com>" ]
 license: "BSD-3"

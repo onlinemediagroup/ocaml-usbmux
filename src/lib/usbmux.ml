@@ -185,8 +185,10 @@ module Relay = struct
        lazy_exceptions,
        tunnels_created,
        tunnel_timeouts,
-       unix_exn_exit_program) =
-    Hashtbl.create 24, ref "", ref None, ref 0, ref 0, ref 0, ref false
+       unix_exn_exit_program,
+       thread_pool) =
+    Hashtbl.create 24, ref "", ref None, ref 0, ref 0,
+    ref 0, ref false, ref (Lwt_pool.create 0 (fun () -> Lwt.return_unit))
 
   let status_server port =
     P.sprintf "http://127.0.0.1:%d" port
@@ -221,7 +223,6 @@ module Relay = struct
          [Lwt_stream.get stream; timeout_task ~after_timeout read_timeout])
     |> Lwt_stream.from
 
-
   let echo ic oc =
     Lwt_io.read_chars ic |> fun hook_in ->
     Lwt_stream.peek hook_in >>= function
@@ -235,6 +236,7 @@ module Relay = struct
            |> Lwt_io.write_chars oc
 
   let load_mappings file_name =
+    let tunnels_count = ref 0 in
     Lwt_io.lines_of_file file_name |> Lwt_stream.to_list >|= fun lines ->
     lines
     |> List.map ~f:String.trim
@@ -258,7 +260,9 @@ module Relay = struct
          raise (Mapping_file_error msg))
       |> List.map ~f:(fun record -> (lazy record, tunnel_of_yojson record))
       |> List.map ~f:(function
-          | (_, `Ok tunnel) -> tunnel
+          | (_, `Ok tunnel) ->
+            tunnels_count := !tunnels_count + List.length tunnel.forwarding;
+            tunnel
           | (need_it, `Error r) ->
             let error_msg =
               ((Lazy.force need_it) |> Safe.pretty_to_string)
@@ -269,7 +273,7 @@ module Relay = struct
       let t = Hashtbl.create (List.length tunnels) in
       tunnels
       |> List.iter ~f:(fun tunnel -> Hashtbl.add t ~key:tunnel.udid ~data:tunnel);
-      t)
+      (!tunnels_count, t))
 
   let do_tunnel (udid, (device_id, tunnels)) =
     tunnels.forwarding |> Lwt_list.map_p (fun {local_port; device_port} ->
@@ -277,44 +281,47 @@ module Relay = struct
         let server_address = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
         Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
           Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
-            let msg = connect_message ~device_id ~device_port in
-            write_header ~total_len:(msg_length msg) mux_oc >>
-            Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
-            (* Read the reply, should be good to start just raw piping *)
-            read_header mux_ic >>= fun (msg_len, _, _, _) ->
-            let buffer = Bytes.create (msg_len - header_length) in
-            Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
-            match parse_reply buffer with
-            | Result Success ->
-              tunnels_created := !tunnels_created + 1;
-              P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
-                         Device_id: %d" udid local_port device_port device_id
-              |> Logging.log `tunnel;
-              Lwt.catch (fun () ->
-                  echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
-                  Lwt.return (
-                    P.sprintf
-                      "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
-                       Device_id: %d" udid local_port device_port device_id
-                    |> Logging.log `tunnel))
-                (function
-                  | Client_closed ->
-                    Logging.log `tunnel "Client closed with an exception"
-                    |> close_chans (mux_ic, mux_oc) >>=
-                    close_chans (tcp_ic, tcp_oc)
-                  | otherwise -> Lwt.fail otherwise)
-            | Result Device_requested_not_connected ->
-              P.sprintf "Tunneling: Device requested was not connected. \
-                         Udid: %s Device_id: %d" udid device_id
-              |> Logging.log `misc
-              |> Lwt.return
-            | Result Port_requested_not_available ->
-              P.sprintf "Tunneling. Port requested, %d, wasn't available. \
-                         Udid: %s Port: %d Device_id: %d"
-                device_port udid local_port device_id
-              |> Logging.log `misc
-              |> Lwt.return
-            | _ -> Lwt.return_unit
+            Lwt_pool.use !thread_pool (fun () ->
+                let msg = connect_message ~device_id ~device_port in
+                write_header ~total_len:(msg_length msg) mux_oc >>
+                Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
+                (* Read the reply, should be good to start just raw piping *)
+                read_header mux_ic >>= fun (msg_len, _, _, _) ->
+                let buffer = Bytes.create (msg_len - header_length) in
+                Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
+                match parse_reply buffer with
+                | Result Success ->
+                  tunnels_created := !tunnels_created + 1;
+                  P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
+                             Device_id: %d" udid local_port device_port device_id
+                  |> Logging.log `tunnel;
+                  Lwt.catch (fun () ->
+                      echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
+                      Lwt.return (
+                        P.sprintf
+                          "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+                           Device_id: %d" udid local_port device_port device_id
+                        |> Logging.log `tunnel))
+                    (function
+                      | Client_closed ->
+                        Logging.log `tunnel "Client closed with an exception"
+                        |> close_chans (mux_ic, mux_oc) >>=
+                        close_chans (tcp_ic, tcp_oc)
+                      | otherwise -> Lwt.fail otherwise)
+                | Result Device_requested_not_connected ->
+                  P.sprintf "Tunneling: Device requested was not connected. \
+                             Udid: %s Device_id: %d" udid device_id
+                  |> Logging.log `misc
+                  |> Lwt.return
+                | Result Port_requested_not_available ->
+                  P.sprintf "Tunneling. Port requested, %d, wasn't available. \
+                             Udid: %s Port: %d Device_id: %d"
+                    device_port udid local_port device_id
+                  |> Logging.log `misc
+                  |> Lwt.return
+                | _ -> Lwt.return_unit
+
+              )
           end
           (* Finished tunneling, now ensures that we close the
              chans. This can rarely throw a lazy value exception that
@@ -491,8 +498,17 @@ module Relay = struct
     (* Setup the signal handlers, needed so that we know when to
        reload, shutdown, etc. *)
     |> handle_signals;
-    load_mappings !mapping_file >>= fun device_mapping ->
-    let devices = Hashtbl.create 24 in
+    load_mappings !mapping_file >>= fun (total_threads_needed, device_mapping) ->
+    P.sprintf "Creating Lwt_pool of size %d" (total_threads_needed + 7)
+    |> Logging.log `misc;
+    thread_pool :=
+      (* We make a thread pool because we know how many threads we'll
+         ever need at full load, we also give 7 more as buffer threads
+         so that we can also use threads even under worst case full
+         load *)
+      Lwt_pool.create (total_threads_needed + 7) (fun () -> Lwt.return_unit);
+
+    let devices = Hashtbl.create (Hashtbl.length device_mapping) in
     try%lwt
       (* We do this because usbmuxd itself assigns device IDs and we
          need to begin the listen message, then find out the device IDs
@@ -526,7 +542,7 @@ module Relay = struct
       (* This thread should never return but its better to be safe
          than sorry *)
       let rec forever () = fst (Lwt.wait ()) >>= forever in
-      (* Create, start the tunnels *)
+      (* create, start the tunnels *)
       device_alist
       |> Lwt_list.iter_p do_tunnel >>
       (* Wait forever *)
