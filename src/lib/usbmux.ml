@@ -231,7 +231,8 @@ module Relay = struct
            |> (match !relay_timeout with
                | None -> id
                | Some read_timeout ->
-                 timeout_stream ~after_timeout:(close_chans (ic, oc)) ~read_timeout)
+                 timeout_stream
+                   ~after_timeout:(close_chans (ic, oc)) ~read_timeout)
            |> Lwt_io.write_chars oc
 
   let load_mappings file_name =
@@ -253,7 +254,8 @@ module Relay = struct
        | Safe.Util.Type_error (e, _) ->
          let msg =
            P.sprintf "Error: %s HINT: Be sure mapping file consists of \
-                      a single JSON array of objects, see man page for examples" e
+                      a single JSON array of objects, see man page for examples"
+             e
          in
          raise (Mapping_file_error msg))
       |> List.map ~f:(fun record -> (lazy record, tunnel_of_yojson record))
@@ -288,16 +290,19 @@ module Relay = struct
           P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
                      Device_id: %d" udid local_port device_port device_id
           |> Logging.log `tunnel;
-          let pid = Lwt_unix.fork () in
-          if pid = 0 then
-            echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
-            exit 0
-          else
-            Lwt_unix.waitpid [] pid >|= fun _ ->
-            (P.sprintf
-               "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
-                Device_id: %d" udid local_port device_port device_id
-             |> Logging.log `tunnel)
+          Lwt.catch (fun () ->
+              echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
+              Lwt.return (
+                P.sprintf
+                  "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+                   Device_id: %d" udid local_port device_port device_id
+                |> Logging.log `tunnel))
+            (function
+              | Client_closed ->
+                Logging.log `tunnel "Client closed with an exception"
+                |> close_chans (mux_ic, mux_oc) >>=
+                close_chans (tcp_ic, tcp_oc)
+              | otherwise -> Lwt.fail otherwise)
         | Result Device_requested_not_connected ->
           P.sprintf "Tunneling: Device requested was not connected. \
                      Udid: %s Device_id: %d" udid device_id
@@ -316,16 +321,28 @@ module Relay = struct
 
   let do_tunnel (udid, (device_id, tunnels)) =
     tunnels.forwarding
-    |> List.map ~f:(fun {local_port; device_port} ->
-        let handler = handle_connection device_id device_port udid local_port in
-        let server_addr = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
-        Lwt_io.establish_server server_addr (fun a ->
-            if Unix.getpid () = !root_gandalf_process_pid then
-              handler a
-          )
+    |> List.iter ~f:(fun {local_port; device_port} ->
+        let handler =
+          handle_connection device_id device_port udid local_port
+        in
+        let server_addr =
+          Unix.(ADDR_INET (inet_addr_loopback, local_port))
+        in
+        let pid = Lwt_unix.fork () in
+        if pid = 0 then
+          let server_handle = Lwt_io.establish_server server_addr handler in
+            (* if Unix.getpid () = !root_gandalf_process_pid then *)
+            (*   handler a *)
+          (* Move hashtable logic here. *)
+          ()
+        else
+          (Lwt_unix.waitpid [] pid >>= fun _ ->
+           Lwt.return_unit)
+          |> Lwt.ignore_result
       )
-    |> List.iter
-      ~f:(fun servers -> Hashtbl.add running_servers ~key:device_id ~data:servers)
+    (* |> List.iter *)
+    (*   ~f:(fun servers -> *)
+    (*       Hashtbl.add running_servers ~key:device_id ~data:servers *)
 
   let complete_shutdown () =
     (* Kill the servers first *)
