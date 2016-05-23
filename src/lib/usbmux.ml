@@ -177,16 +177,16 @@ module Relay = struct
 
   type exn += Client_closed | Mapping_file_error of string
 
-  let relay_lock = Lwt_mutex.create ()
-
   let (running_servers,
        mapping_file,
        relay_timeout,
        lazy_exceptions,
        tunnels_created,
        tunnel_timeouts,
-       unix_exn_exit_program) =
-    Hashtbl.create 24, ref "", ref None, ref 0, ref 0, ref 0, ref false
+       unix_exn_exit_program,
+       root_gandalf_process_pid) =
+    Hashtbl.create 24, ref "", ref None, ref 0,
+    ref 0, ref 0, ref false, ref 0
 
   let status_server port =
     P.sprintf "http://127.0.0.1:%d" port
@@ -271,69 +271,68 @@ module Relay = struct
       |> List.iter ~f:(fun tunnel -> Hashtbl.add t ~key:tunnel.udid ~data:tunnel);
       t)
 
+  let handle_connection
+      device_id device_port udid local_port (tcp_ic, tcp_oc) =
+    Protocol.(
+      Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
+        let msg = connect_message ~device_id ~device_port in
+        write_header ~total_len:(msg_length msg) mux_oc >>
+        Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
+        (* Read the reply, should be good to start just raw piping *)
+        read_header mux_ic >>= fun (msg_len, _, _, _) ->
+        let buffer = Bytes.create (msg_len - header_length) in
+        Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
+        match parse_reply buffer with
+        | Result Success ->
+          tunnels_created := !tunnels_created + 1;
+          P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
+                     Device_id: %d" udid local_port device_port device_id
+          |> Logging.log `tunnel;
+          let pid = Lwt_unix.fork () in
+          if pid = 0 then
+            echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
+            exit 0
+          else
+            Lwt_unix.waitpid [] pid >|= fun _ ->
+            (P.sprintf
+               "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
+                Device_id: %d" udid local_port device_port device_id
+             |> Logging.log `tunnel)
+        | Result Device_requested_not_connected ->
+          P.sprintf "Tunneling: Device requested was not connected. \
+                     Udid: %s Device_id: %d" udid device_id
+          |> Logging.log `misc
+          |> Lwt.return
+        | Result Port_requested_not_available ->
+          P.sprintf "Tunneling. Port requested, %d, wasn't available. \
+                     Udid: %s Port: %d Device_id: %d"
+            device_port udid local_port device_id
+          |> Logging.log `misc
+          |> Lwt.return
+        | _ -> Lwt.return_unit
+      end
+    )
+    |> Lwt.ignore_result
+
   let do_tunnel (udid, (device_id, tunnels)) =
-      tunnels.forwarding |> Lwt_list.map_s (fun {local_port; device_port} ->
-          let open Protocol in
-          let server_address = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
-          Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
-            Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
-              let msg = connect_message ~device_id ~device_port in
-              write_header ~total_len:(msg_length msg) mux_oc >>
-              Lwt_io.write_from_string_exactly mux_oc msg 0 (String.length msg) >>
-              (* Read the reply, should be good to start just raw piping *)
-              read_header mux_ic >>= fun (msg_len, _, _, _) ->
-              let buffer = Bytes.create (msg_len - header_length) in
-              Lwt_io.read_into_exactly mux_ic buffer 0 (msg_len - header_length) >>
-              match parse_reply buffer with
-              | Result Success ->
-                tunnels_created := !tunnels_created + 1;
-                P.sprintf "Tunneling. Udid: %s Local Port: %d Device Port: %d \
-                           Device_id: %d" udid local_port device_port device_id
-                |> Logging.log `tunnel;
-                Lwt.catch (fun () ->
-                    echo tcp_ic mux_oc <&> echo mux_ic tcp_oc >>
-                    Lwt.return (
-                      P.sprintf
-                        "Finished Tunneling. Udid: %s Port: %d Device Port: %d \
-                         Device_id: %d" udid local_port device_port device_id
-                      |> Logging.log `tunnel))
-                  (function
-                    | Client_closed ->
-                      Logging.log `tunnel "Client closed with an exception"
-                      |> close_chans (mux_ic, mux_oc) >>=
-                      close_chans (tcp_ic, tcp_oc)
-                    | otherwise -> Lwt.fail otherwise)
-              | Result Device_requested_not_connected ->
-                P.sprintf "Tunneling: Device requested was not connected. \
-                           Udid: %s Device_id: %d" udid device_id
-                |> Logging.log `misc
-                |> Lwt.return
-              | Result Port_requested_not_available ->
-                P.sprintf "Tunneling. Port requested, %d, wasn't available. \
-                           Udid: %s Port: %d Device_id: %d"
-                  device_port udid local_port device_id
-                |> Logging.log `misc
-                |> Lwt.return
-              | _ -> Lwt.return_unit
-            end
-            (* Finished tunneling, now ensures that we close the
-               chans. This can rarely throw a lazy value exception that
-               is caught in the async hook exception handler, happens
-               with_connection and establish_server as they have their
-               own lazy logic to close the sockets *)
-            >>= close_chans (tcp_ic, tcp_oc)
-            |> Lwt.ignore_result
-          end
-          |> Lwt.return) >>= fun servers ->
-      (* Register the servers for this particular device id *)
-      (fun () -> Lwt.return (Hashtbl.add running_servers ~key:device_id ~data:servers))
-      |> Lwt_mutex.with_lock relay_lock
+    tunnels.forwarding
+    |> List.map ~f:(fun {local_port; device_port} ->
+        let handler = handle_connection device_id device_port udid local_port in
+        let server_addr = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
+        Lwt_io.establish_server server_addr (fun a ->
+            if Unix.getpid () = !root_gandalf_process_pid then
+              handler a
+          )
+      )
+    |> List.iter
+      ~f:(fun servers -> Hashtbl.add running_servers ~key:device_id ~data:servers)
 
   let complete_shutdown () =
     (* Kill the servers first *)
     running_servers
-    |> Hashtbl.iter ~f:(fun ~key:_ ~data -> List.iter ~f:Lwt_io.shutdown_server data);
-    P.sprintf "Completed shutting down %d servers" (Hashtbl.length running_servers)
+    |> Hashtbl.iter ~f:(fun ~key:_ ~data -> Lwt_io.shutdown_server data);
+    Hashtbl.length running_servers
+    |> P.sprintf "Completed shutting down %d servers"
     |> Logging.log `misc;
     Hashtbl.reset running_servers
 
@@ -364,13 +363,15 @@ module Relay = struct
     )
 
   let device_alist_of_hashtable ~device_mapping ~devices =
-    devices |> Hashtbl.fold ~init:[] ~f:(fun ~key:device_id ~data:udid_value accum ->
+    devices
+    |> Hashtbl.fold ~init:[] ~f:(fun ~key:device_id ~data:udid_value accum ->
         try
           (udid_value, (device_id,
                         Hashtbl.find device_mapping udid_value)) :: accum
         with
           Not_found ->
-          P.sprintf "Device with udid: %s expected but wasn't connected" udid_value
+          udid_value
+          |> P.sprintf "Device with udid: %s expected but wasn't connected"
           |> Logging.log `misc;
           accum)
 
@@ -415,7 +416,7 @@ module Relay = struct
       let shutdown_and_prune d =
         try
           (Hashtbl.find running_servers d)
-          |> List.iter ~f:Lwt_io.shutdown_server;
+          |> Lwt_io.shutdown_server;
           Hashtbl.remove running_servers d
         with Not_found -> ()
       in
@@ -427,7 +428,6 @@ module Relay = struct
           Not_found ->
           P.sprintf "relay can't create tunnel for device udid: %s" device_udid
           |> Logging.log `misc
-          |> Lwt.return
       in
       Protocol.(create_listener ~event_cb:begin function
           | Event Attached { serial_number = s; connection_speed = _;
@@ -435,14 +435,12 @@ module Relay = struct
                              location_id = _; device_id = d; } ->
             P.sprintf "Device %d with serial number: %s connected" d s
             |> Logging.log `plugged_inout;
-            if not (Hashtbl.mem devices d)
-            then
-              (* Two cases, devices that have been known or unknown devices *)
-              (Hashtbl.add devices ~key:d ~data:s;
-               device_list := device_alist_of_hashtable ~device_mapping ~devices;
-               spin_up_tunnel s d)
-            else
-              Lwt.return ()
+            (if not (Hashtbl.mem devices d)
+             then
+               (Hashtbl.add devices ~key:d ~data:s;
+                device_list := device_alist_of_hashtable ~device_mapping ~devices;
+                spin_up_tunnel s d))
+            |> Lwt.return
           | Event Detached d ->
             P.sprintf "Device %d disconnected" d
             |> Logging.log `plugged_inout;
@@ -464,9 +462,11 @@ module Relay = struct
       ?stats_server
       ?tunnel_timeout
       ~device_map =
+    root_gandalf_process_pid := Unix.getpid ();
     (* setup the at_exit handler early on *)
     (fun () ->
-       if Hashtbl.length running_servers <> 0
+       if Hashtbl.length running_servers <> 0 &&
+          Unix.getpid () = !root_gandalf_process_pid
        then Hashtbl.length running_servers
             |> Lwt_io.printlf "Exited with %d still running; this is a bug."
        else Lwt.return_unit)
@@ -527,7 +527,7 @@ module Relay = struct
          than sorry *)
       let rec forever () = fst (Lwt.wait ()) >>= forever in
       (* Create, start the tunnels *)
-      device_alist |> Lwt_list.iter_p do_tunnel >>
+      device_alist |> List.iter ~f:do_tunnel;
       (* Wait forever *)
       forever ()
 
@@ -552,9 +552,7 @@ module Relay = struct
   (* Mutually recursive function, handle_signals needs name of
      make_tunnels and make_tunnels needs the name handle_signals *)
   and handle_signals () =
-    Sys.([ (* Broken SSH pipes shouldn't exit our program *)
-        signal sigpipe Signal_ignore;
-        (* Stop the running threads, call make_tunnels again *)
+    Sys.([(* Stop the running threads, call make_tunnels again *)
         signal
           sigusr1
           (Signal_handle (fun _ -> do_restart ()));
