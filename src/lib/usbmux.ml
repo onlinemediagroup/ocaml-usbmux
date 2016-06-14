@@ -272,7 +272,8 @@ module Relay = struct
       t)
 
   let do_tunnel (udid, (device_id, tunnels)) =
-      tunnels.forwarding |> Lwt_list.map_s (fun {local_port; device_port} ->
+    begin
+      tunnels.forwarding |> Lwt_list.map_p (fun {local_port; device_port} ->
           let open Protocol in
           let server_address = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
           Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
@@ -328,6 +329,8 @@ module Relay = struct
       (* Register the servers for this particular device id *)
       (fun () -> Lwt.return (Hashtbl.add running_servers ~key:device_id ~data:servers))
       |> Lwt_mutex.with_lock relay_lock
+    end
+    |> Lwt.ignore_result
 
   let complete_shutdown () =
     (* Kill the servers first *)
@@ -427,7 +430,6 @@ module Relay = struct
           Not_found ->
           P.sprintf "relay can't create tunnel for device udid: %s" device_udid
           |> Logging.log `misc
-          |> Lwt.return
       in
       Protocol.(create_listener ~event_cb:begin function
           | Event Attached { serial_number = s; connection_speed = _;
@@ -440,7 +442,8 @@ module Relay = struct
               (* Two cases, devices that have been known or unknown devices *)
               (Hashtbl.add devices ~key:d ~data:s;
                device_list := device_alist_of_hashtable ~device_mapping ~devices;
-               spin_up_tunnel s d)
+               spin_up_tunnel s d
+               |> Lwt.return)
             else
               Lwt.return ()
           | Event Detached d ->
@@ -527,7 +530,8 @@ module Relay = struct
          than sorry *)
       let rec forever () = fst (Lwt.wait ()) >>= forever in
       (* Create, start the tunnels *)
-      device_alist |> Lwt_list.iter_p do_tunnel >>
+      device_alist
+      |> Lwt_list.iter_p (Lwt_preemptive.detach do_tunnel) >>
       (* Wait forever *)
       forever ()
 
