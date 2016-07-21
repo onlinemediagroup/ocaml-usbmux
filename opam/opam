@@ -1,7 +1,7 @@
 # -*- conf -*-
 opam-version: "1.2"
 name: "usbmux"
-version: "1.3.1"
+version: "1.3.2"
 maintainer: "Edgar Aroutiounian <edgar.factorial@gmail.com>"
 authors: [ "Edgar Aroutiounian <edgar.factorial@gmail.com>" ]
 license: "BSD-3"
@@ -14,7 +14,7 @@ build: [
   ["ocaml" "setup.ml" "-build"]
 ]
 install: ["ocaml" "setup.ml" "-install"]
-available: [ ocaml-version >= "4.02.0" ]
+available: [ ocaml-version >= "4.02.0" & ocaml-version < "4.03.0"]
 remove: [
   ["ocaml" "%{etc}%/usbmux/_oasis_remove_.ml" "%{etc}%/usbmux"]
 ]
@@ -29,18 +29,20 @@ build-test: [
   ["ocaml" "setup.ml" "-test"]
 ]
 depends: [
-  "cmdliner" {build}
-  "cohttp"
-  "lwt" {>= "2.5.1"}
+  "cmdliner" {build & >= "0.9.8"}
+  "cohttp" {>= "0.21.0"}
+  "lwt" {>= "2.5.2"}
   "ocamlfind" {build}
   "oasis" {build & >= "0.4"}
-  "ppx_deriving_yojson" {>= "2.4"}
+  "ppx_deriving_yojson" {>= "3.0"}
+  "ppx_deriving" {>= "4.0"}
   "base-threads"
   "plist"
-  "yojson"
+  "yojson" {>= "1.3.2"}
 ]
 post-messages: [
   "Now you can ssh into your jailbroken iDevice using the CLI, gandalf."
+  "(if on Linux then make sure you have usbmuxd running)"
   "Simple invocation:"
   "sudo `which gandalf` --mappings etc/mapping --daemonize --verbose"
 "
