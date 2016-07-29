@@ -1,3 +1,5 @@
+default: build opam/opam
+
 # OASIS_START
 # DO NOT EDIT (digest: a3c674b4239234cbbe53afe090018954)
 
@@ -39,3 +41,9 @@ configure:
 .PHONY: build doc test all install uninstall reinstall clean distclean configure
 
 # OASIS_STOP
+
+opam/opam: _oasis _opam
+	oasis2opam --local -y
+
+setup.ml: _oasis
+	oasis setup -setup-update dynamic
