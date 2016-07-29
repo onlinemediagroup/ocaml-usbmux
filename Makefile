@@ -44,3 +44,6 @@ configure:
 
 opam/opam: _oasis _opam
 	oasis2opam --local -y
+
+setup.ml: _oasis
+	oasis setup -setup-update dynamic
