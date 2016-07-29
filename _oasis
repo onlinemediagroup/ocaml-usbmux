@@ -64,7 +64,7 @@ Executable gandalf
   CompiledObject: native
   NativeOpt: -g -w +a-4-40..42-44-45-48
   ByteOpt: -g -w +a-4-40..42-44-45-48
-  BuildDepends: cmdliner, usbmux
+  BuildDepends: cmdliner (>= 0.9.8), usbmux
 
 SourceRepository master
   Type:     git
