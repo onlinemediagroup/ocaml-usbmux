@@ -38,7 +38,10 @@ $ apt-get install ocaml opam
 ```
 
 It is important that your compiler is up to date, you can
-check with `opam switch`, make sure its at least >= 4.02.0. 
+check with `opam switch`, make sure its at least >= 4.02.0. Currently
+gandalf works with versions between ["4.02.0", "4.03.0"). Once
+`ppx_core` updates then I can update as well to let you use "4.03.0".
+
 
 then
 
@@ -154,3 +157,8 @@ and works fine with > 20 iPhones.
 1.  Much appreciation to MixRank for green lighting this project
 2.  Ivg, Edwin and others on #OCaml
 3.  Starting point ideas from irelay, an npm package.
+
+
+# Future plans
+Future plans include writing C bindings to libusbmuxd itself, thereby
+eliminating the dependency on `usbmuxd`.

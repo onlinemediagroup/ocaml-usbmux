@@ -258,8 +258,8 @@ module Relay = struct
          raise (Mapping_file_error msg))
       |> List.map ~f:(fun record -> (lazy record, tunnel_of_yojson record))
       |> List.map ~f:(function
-          | (_, `Ok tunnel) -> tunnel
-          | (need_it, `Error r) ->
+          | (_, Result.Ok tunnel) -> tunnel
+          | (need_it, Result.Error r) ->
             let error_msg =
               ((Lazy.force need_it) |> Safe.pretty_to_string)
               |> P.sprintf "Check this needed field: %s, Original Json: %s" r
