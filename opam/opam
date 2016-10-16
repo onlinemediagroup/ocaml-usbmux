@@ -34,7 +34,7 @@ depends: [
   "plist"
   "ppx_deriving" {>= "4.0"}
   "ppx_deriving_yojson" {>= "3.0"}
-  "yojson" {>= "1.3.2"}
+  ("yojson" {>= "1.3.2"} | "yojson-android" {>= "1.3.2"})
 ]
 available: [ ocaml-version >= "4.02.0" ]
 depexts: [

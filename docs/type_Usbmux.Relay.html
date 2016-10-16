@@ -1,0 +1,22 @@
+<html><head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+<link rel="Start" href="index.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of extensions" rel=Appendix href="index_extensions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Usbmux" rel="Chapter" href="Usbmux.html"><title>Usbmux.Relay</title>
+</head>
+<body>
+<code class="code"><span class="keyword">sig</span>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;action&nbsp;=&nbsp;<span class="constructor">Shutdown</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Reload</span>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;exn&nbsp;+=&nbsp;<span class="constructor">Mapping_file_error</span>&nbsp;<span class="keyword">of</span>&nbsp;string
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;make_tunnels&nbsp;:
+&nbsp;&nbsp;&nbsp;&nbsp;?ignore_unix_exn:bool&nbsp;<span class="keywordsign">-&gt;</span>
+&nbsp;&nbsp;&nbsp;&nbsp;?log_opts:<span class="constructor">Usbmux</span>.<span class="constructor">Logging</span>.log_opts&nbsp;<span class="keywordsign">-&gt;</span>
+&nbsp;&nbsp;&nbsp;&nbsp;?stats_server:int&nbsp;<span class="keywordsign">-&gt;</span>
+&nbsp;&nbsp;&nbsp;&nbsp;?tunnel_timeout:int&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;device_map:<span class="constructor">Lwt_io</span>.file_name&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="constructor">Lwt</span>.t
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;perform&nbsp;:&nbsp;<span class="constructor">Usbmux</span>.<span class="constructor">Relay</span>.action&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;status&nbsp;:&nbsp;port:int&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Yojson</span>.<span class="constructor">Basic</span>.json&nbsp;<span class="constructor">Lwt</span>.t
+<span class="keyword">end</span></code></body></html>

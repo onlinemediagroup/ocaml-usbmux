@@ -76,8 +76,9 @@ Document api
   Type:               ocamlbuild (0.4)
   BuildTools+:        ocamldoc
   InstallDir:         $htmldir/usbmux
-  PostCommand:        cp doc/style.css api.docdir
-  XOCamlbuildPath:    doc
+  PostCommand:        cp docs/style.css api.docdir && cp api.docdir/* docs
+  XOCamlbuildPath:    docs
   XOCamlbuildModules: src/lib/Usbmux
   Install:            true
-  XOCamlbuildExtraArgs: "-docflags '-colorize-code -charset utf-8 -hide Usbmux -hide Pervasives'"
+  XOCamlbuildExtraArgs:
+    "-docflags '-colorize-code -charset utf-8 -hide Usbmux -hide Pervasives'"
