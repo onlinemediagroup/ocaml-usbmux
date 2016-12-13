@@ -1,3 +1,4 @@
+# -*- conf -*-
 depexts: [
   [["debian"] ["usbmuxd"]]
   [["ubuntu"] ["usbmuxd"]]
