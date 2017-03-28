@@ -46,6 +46,11 @@ let status_server_port =
   let doc = "Port that $(b,$(tname))'s status server will use" in
   Arg.(value & opt (some int) (Some 5000) & info ["status_port"] ~doc)
 
+let bind_host =
+  let doc =
+    "Host that tunnels will bind to/listen on" in
+  Arg.(value & opt (some string) None & info ["l"; "bind_host"] ~doc)
+
 let status =
   let doc = "Metadata and pretty print json of \
              currently tunneled devices."

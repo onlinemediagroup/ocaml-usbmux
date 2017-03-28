@@ -85,6 +85,7 @@ module Relay : sig
       creates the tunnels requested for in the {b device_map} and creates a
       HTTP status server that is accessible at localport 5000. *)
   val make_tunnels :
+    ?bind_host:string option ->
     ?ignore_unix_exn:bool ->
     ?log_opts:Logging.log_opts ->
     ?stats_server:int ->

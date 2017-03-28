@@ -103,7 +103,8 @@ let begin_program
     log_plugged_inout
     log_everything_else
     stats_server
-    ignore_unix_exn_ =
+    ignore_unix_exn_
+    bind_host =
   let starting_place = Sys.getcwd () in
   if do_daemonize then begin
     (* This order matters, must get this done before anything Lwt
@@ -150,6 +151,7 @@ let begin_program
         Usbmux.Logging.(
           let relay_with =
             R.make_tunnels
+              ~bind_host:bind_host
               ~ignore_unix_exn:ignore_unix_exn_
               ?stats_server
               ?tunnel_timeout
@@ -198,7 +200,8 @@ let entry_point = let open Gandalf_args in
         $ log_plugged_action
         $ log_everything_else
         $ status_server_port
-        $ ignore_all_unix_errors)
+        $ ignore_all_unix_errors
+        $ bind_host)
 
 let top_level_info =
   let doc = "Control TCP forwarding for iDevices" in

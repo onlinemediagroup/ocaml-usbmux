@@ -179,6 +179,8 @@ module Relay = struct
 
   let relay_lock = Lwt_mutex.create ()
 
+  let tunnel_host = ref None
+
   let (running_servers,
        mapping_file,
        relay_timeout,
@@ -275,7 +277,9 @@ module Relay = struct
     begin
       tunnels.forwarding |> Lwt_list.map_p (fun {local_port; device_port} ->
           let open Protocol in
-          let server_address = Unix.(ADDR_INET (inet_addr_loopback, local_port)) in
+          let server_address = match !tunnel_host with
+            | None -> Unix.(ADDR_INET (inet_addr_loopback, local_port))
+            | Some addr -> Unix.(ADDR_INET (inet_addr_of_string(addr), local_port)) in
           Lwt_io.establish_server server_address begin fun (tcp_ic, tcp_oc) ->
             Lwt_io.with_connection usbmuxd_address begin fun (mux_ic, mux_oc) ->
               let msg = connect_message ~device_id ~device_port in
@@ -462,6 +466,7 @@ module Relay = struct
     |> Lwt.async
 
   let rec make_tunnels
+      ?(bind_host=None)
       ?(ignore_unix_exn=false)
       ?(log_opts=(!Logging.logging_opts))
       ?stats_server
@@ -477,6 +482,7 @@ module Relay = struct
 
     (* Should Unix exceptions exit the program? *)
     unix_exn_exit_program := ignore_unix_exn;
+    tunnel_host := bind_host;
 
     (* Set the logging options *)
     Logging.logging_opts := log_opts;
@@ -542,6 +548,7 @@ module Relay = struct
       (* Spin it up again *)
       make_tunnels
         (* Use existing status server *)
+        ~bind_host:!tunnel_host
         ~ignore_unix_exn:!unix_exn_exit_program
         ~log_opts:!Logging.logging_opts
         ?stats_server:None
