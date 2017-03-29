@@ -466,7 +466,7 @@ module Relay = struct
     |> Lwt.async
 
   let rec make_tunnels
-      ?bind_host
+      ?(bind_host=None)
       ?(ignore_unix_exn=false)
       ?(log_opts=(!Logging.logging_opts))
       ?stats_server
