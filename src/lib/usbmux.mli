@@ -80,10 +80,10 @@ module Relay : sig
   (** Create tunnels requested in a mapping file
       provided.
 
-      [make_tunnels ~stats_server:true tunnel_timeout:3000 ~device_map:"some/path/mapping"]
+      [make_tunnels ~stats_server:true ~bind_host:127.0.0.1 tunnel_timeout:3000 ~device_map:"some/path/mapping"]
 
       creates the tunnels requested for in the {b device_map} and creates a
-      HTTP status server that is accessible at localport 5000. *)
+      HTTP status server that is accessible at defined host and port 5000. *)
   val make_tunnels :
     ?bind_host:string option ->
     ?ignore_unix_exn:bool ->
