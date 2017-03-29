@@ -151,7 +151,7 @@ let begin_program
         Usbmux.Logging.(
           let relay_with =
             R.make_tunnels
-              ~bind_host:bind_host
+              ~bind_host
               ~ignore_unix_exn:ignore_unix_exn_
               ?stats_server
               ?tunnel_timeout
